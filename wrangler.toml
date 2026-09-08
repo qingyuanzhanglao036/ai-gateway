@@ -10,6 +10,4 @@ binding = "KV"
 
 # 管理员账号密码环境变量配置
 [vars]
-#ADMIN_USERNAME = "admin"
-#ADMIN_PASSWORD = "admin123456"
 # OPENCODE_MIRRORS_URL = "https://opencode.ai.cmliussss.net/zen/v1\nhttps://opencode.fastly.cmliussss.net/zen/v1\nhttps://opencode.gcore.cmliussss.net/zen/v1"
