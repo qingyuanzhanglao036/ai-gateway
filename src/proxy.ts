@@ -1,6 +1,6 @@
 /**
- * 版本号: v1.0.12
- * 模块: API 代理请求转发、健康探测、梯队路由调度与会话专属调度粘性策略（全路径 KV 安全拦截）
+ * 版本号: v1.0.8
+ * 模块: API 代理请求转发、健康探测、梯队路由调度与会话专属调度粘性策略
  */
 import { Context } from 'hono'
 import {
@@ -38,17 +38,9 @@ type HealthMap = Record<string, KeyHealth>
 const HEALTH_KEY = (providerId: string) => KV_KEYS.KEY_HEALTH_PREFIX + providerId
 
 async function readHealth(env: Env, providerId: string): Promise<HealthMap> {
-  // 防护：若未绑定 KV 则直接返回空健康状态
-  if (!env?.KV) return {}
-  try {
-    const raw = await env.KV.get(HEALTH_KEY(providerId))
-    return raw ? JSON.parse(raw) : {}
-  } catch (err) {
-    console.error('readHealth 异常:', err)
-    return {}
-  }
+  const raw = await env.KV.get(HEALTH_KEY(providerId))
+  return raw ? JSON.parse(raw) : {}
 }
-
 
 /**
  * 写入/更新 Key 健康状态
