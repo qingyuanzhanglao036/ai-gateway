@@ -1,6 +1,6 @@
 /**
- * 版本号: v1.0.3
- * 模块: 内存日志管理、调试开关控制与正式模式内存缓存批量落盘
+ * 版本号: v1.0.11
+ * 模块: 内存日志管理、调试开关控制与正式模式内存缓存批量落盘（增加 Worker 异步定时器与异常防护）
  */
 import type { Env, LogEntry, DebugConfig } from './types'
 import { KV_KEYS } from './config'
@@ -34,20 +34,16 @@ let pendingItemsCount = 0
  * 调试模式下：仅记录报错和超时请求，并在前端展示
  */
 export function recordLog(data: Omit<LogEntry, 'id'>): void {
-  // 判断当前是否处于调试模式
   if (debugConfig.debugMode) {
-    // 调试模式只保留报错 (状态码 >= 400) 或有明确失败原因/超时的日志
     const isErrorOrTimeout = data.statusCode >= 400 || (data.failReason && data.failReason !== '-')
     if (!isErrorOrTimeout) return
   }
 
-  // 生成唯一日志项
   const entry: LogEntry = {
     id: crypto.randomUUID(),
     ...data,
   }
 
-  // 内存环形队列存储：若超过最大条数，丢弃最旧日志
   if (memoryLogs.length >= MAX_MEMORY_LOGS) {
     memoryLogs.shift()
   }
@@ -58,7 +54,6 @@ export function recordLog(data: Omit<LogEntry, 'id'>): void {
  * 获取当前所有内存日志
  */
 export function getMemoryLogs(): LogEntry[] {
-  // 按时间倒序返回，最新的在最前面
   return [...memoryLogs].reverse()
 }
 
@@ -80,23 +75,19 @@ export function getDebugConfig(): DebugConfig {
  * 将待落盘的 Key 健康数据加入内存缓存队列
  */
 export async function queueHealthUpdate(env: Env, providerId: string, health: HealthMap): Promise<void> {
-  // 如果开启了调试模式，则直接写入 KV，不启用批处理队列
   if (debugConfig.debugMode) {
     await writeHealthDirect(env, providerId, health)
     return
   }
 
-  // 正式模式：将健康更新暂存在内存缓存中
   pendingHealthCache[providerId] = health
   pendingItemsCount++
 
-  // 检查是否达到队列最大条数，若达到则立即统一写入 KV
   if (pendingItemsCount >= debugConfig.maxCacheItems) {
     await flushPendingHealthCache(env)
     return
   }
 
-  // 若尚未启动定时器，启动 30 秒全局唯一定时器
   ensureGlobalTimer(env)
 }
 
@@ -104,13 +95,15 @@ export async function queueHealthUpdate(env: Env, providerId: string, health: He
  * 确保启动唯一的全局 30 秒落盘定时器
  */
 function ensureGlobalTimer(env: Env): void {
-  // 如果已有活跃定时器，不重复创建
   if (globalTimerHandle !== null) return
 
-  // 设定定时器，达到指定秒数强制清空落盘
   globalTimerHandle = setTimeout(async () => {
     globalTimerHandle = null
-    await flushPendingHealthCache(env)
+    try {
+      await flushPendingHealthCache(env)
+    } catch (err) {
+      console.error('全局落盘定时器异步异常:', err)
+    }
   }, debugConfig.flushIntervalSec * 1000)
 }
 
@@ -125,19 +118,23 @@ export function clearGlobalTimer(): void {
 }
 
 /**
- * 直接将单个提供商的健康状态写入 KV（底层封装）
+ * 直接将单个提供商的健康状态写入 KV（底层封装，防崩溃）
  */
 async function writeHealthDirect(env: Env, providerId: string, health: HealthMap): Promise<void> {
-  const healthKey = KV_KEYS.KEY_HEALTH_PREFIX + providerId
-  const filtered: HealthMap = {}
-  // 仅保存有失败记录的 key，避免 KV 存储浪费
-  for (const [k, v] of Object.entries(health)) {
-    if (v.failures > 0) filtered[k] = v
-  }
-  if (Object.keys(filtered).length > 0) {
-    await env.KV.put(healthKey, JSON.stringify(filtered))
-  } else {
-    await env.KV.delete(healthKey).catch(() => {})
+  if (!env?.KV) return
+  try {
+    const healthKey = KV_KEYS.KEY_HEALTH_PREFIX + providerId
+    const filtered: HealthMap = {}
+    for (const [k, v] of Object.entries(health)) {
+      if (v.failures > 0) filtered[k] = v
+    }
+    if (Object.keys(filtered).length > 0) {
+      await env.KV.put(healthKey, JSON.stringify(filtered))
+    } else {
+      await env.KV.delete(healthKey).catch(() => {})
+    }
+  } catch (err) {
+    console.error('writeHealthDirect 写入 KV 异常:', err)
   }
 }
 
@@ -145,37 +142,33 @@ async function writeHealthDirect(env: Env, providerId: string, health: HealthMap
  * 强制将内存中未落地的所有缓存数据一次性批量写入 KV
  */
 export async function flushPendingHealthCache(env: Env): Promise<void> {
-  // 清理现有定时器
   clearGlobalTimer()
-
-  // 更新最后落盘时间戳
   lastFlushTimestamp = Date.now()
 
-  // 如果没有积压的缓存，直接退出
   if (pendingItemsCount === 0 && Object.keys(pendingHealthCache).length === 0) {
     return
   }
 
-  // 批量写入所有积压的提供商健康数据
-  const entries = Object.entries(pendingHealthCache)
-  for (const [providerId, health] of entries) {
-    await writeHealthDirect(env, providerId, health)
-    delete pendingHealthCache[providerId]
+  try {
+    const entries = Object.entries(pendingHealthCache)
+    for (const [providerId, health] of entries) {
+      await writeHealthDirect(env, providerId, health)
+      delete pendingHealthCache[providerId]
+    }
+  } catch (err) {
+    console.error('flushPendingHealthCache 批量落盘异常:', err)
+  } finally {
+    pendingItemsCount = 0
   }
-
-  // 重置积压计数器
-  pendingItemsCount = 0
 }
 
 /**
  * 每次请求后置校验落盘条件（解决 Cloudflare Worker 无常驻后台定时器的问题）
  */
 export async function checkAndFlushOnRequest(env: Env): Promise<void> {
-  // 如果处于调试模式，无需后置落盘检查
   if (debugConfig.debugMode) return
 
   const elapsed = Date.now() - lastFlushTimestamp
-  // 如果达到时间周期或缓存条数已满，触发落盘
   if (elapsed >= debugConfig.flushIntervalSec * 1000 || pendingItemsCount >= debugConfig.maxCacheItems) {
     await flushPendingHealthCache(env)
   }
@@ -183,31 +176,27 @@ export async function checkAndFlushOnRequest(env: Env): Promise<void> {
 
 /**
  * 更新调试模式与缓存配置
- * 切换调试模式瞬间，强制统一执行一次落盘，防止数据丢失
  */
 export async function updateDebugConfig(env: Env, updates: Partial<DebugConfig>): Promise<DebugConfig> {
   const oldMode = debugConfig.debugMode
   const newMode = updates.debugMode !== undefined ? updates.debugMode : oldMode
 
-  // 切换调试模式瞬间：内存未落地缓存强制统一执行一次落盘，防止数据丢失
   if (oldMode !== newMode) {
     await flushPendingHealthCache(env)
     if (newMode) {
-      // 开启调试模式，清理后台定时器
       clearGlobalTimer()
     }
   }
 
-  // 更新配置项
   debugConfig = {
     ...debugConfig,
     ...updates,
   }
 
-  // 如果仍在正式模式且有待写项，重新挂载定时器
   if (!debugConfig.debugMode && pendingItemsCount > 0) {
     ensureGlobalTimer(env)
   }
 
   return { ...debugConfig }
 }
+

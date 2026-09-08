@@ -1,6 +1,6 @@
 /**
- * 版本号: v1.0.10
- * 模块: AI Gateway 主应用入口与路由配置
+ * 版本号: v1.0.11
+ * 模块: AI Gateway 主应用入口与路由配置（全流程防崩增强）
  */
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
@@ -33,7 +33,6 @@ import {
 } from './admin'
 import { renderHomePage, renderLoginPage, renderAdminPage } from './pages'
 import { seedInitialData, getSession } from './storage'
-// 导入探测任务内存互斥锁（注意：单 Worker 实例内存生效，严格遵循不增加 KV 读写配额设计）
 import { isProbeRunning, tryAcquireProbeLock, releaseProbeLock, runWithProbeLock } from './probe-lock'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -42,15 +41,20 @@ const app = new Hono<{ Bindings: Env }>()
 app.use('*', cors())
 app.use('*', logger())
 
-// 首次请求时填充虚拟数据
+// 首次请求时填充虚拟数据（增加 try-catch 拦截，防止首屏异常导致 1101）
 let seeded = false
 app.use('*', async (c, next) => {
   if (!seeded) {
-    await seedInitialData(c.env)
-    seeded = true
+    try {
+      await seedInitialData(c.env)
+      seeded = true
+    } catch (err) {
+      console.error('seedInitialData 初始化异常拦截:', err)
+    }
   }
   return next()
 })
+
 
 // ===== 首页 =====
 app.get('/', async (c) => {

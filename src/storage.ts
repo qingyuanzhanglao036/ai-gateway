@@ -1,10 +1,12 @@
 /**
- * 版本号: v1.0.8
- * 模块: 数据持久化层（KV 存储读写与顺风车打包）
+ * 版本号: v1.0.11
+ * 模块: 数据持久化层（KV 存储读写与顺风车打包，全函数增强空指针与异常防护）
  */
 import {
   KV_KEYS,
   DEFAULT_TIER_CONFIG,
+  DEFAULT_PROVIDERS,
+  PROXY_KEY_PREFIX,
   MAX_SESSION_STICKINESS_HISTORY,
   SESSION_STICKINESS_TTL_SECONDS,
 } from './config'
@@ -21,26 +23,25 @@ import type {
   SessionStickinessRecord,
 } from './types'
 
-// ===== 会话专属调度粘性策略（单会话最多保存最近5条成功模型，带过期时间TTL，保护免费版KV每日1000写配额） =====
+// ===== 会话专属调度粘性策略 =====
 
-// 内存暂存缓存，用于同一请求生命周期内快速复用
 const stickinessMemoryCache: Record<string, SessionStickinessRecord> = {}
 
 export async function getSessionStickiness(env: Env, sessionId: string): Promise<SessionStickinessRecord | null> {
-  if (!sessionId) return null
-  // 1. 优先从内存缓存中获取
+  if (!sessionId || !env?.KV) return null
   if (stickinessMemoryCache[sessionId]) {
     return stickinessMemoryCache[sessionId]
   }
-  // 2. 从 KV 读取
-  const key = `${KV_KEYS.SESSION_STICKINESS_PREFIX}${sessionId}`
-  const data = await env.KV.get(key)
-  if (data) {
-    try {
+  try {
+    const key = `${KV_KEYS.SESSION_STICKINESS_PREFIX}${sessionId}`
+    const data = await env.KV.get(key)
+    if (data) {
       const parsed = JSON.parse(data) as SessionStickinessRecord
       stickinessMemoryCache[sessionId] = parsed
       return parsed
-    } catch { /* ignore */ }
+    }
+  } catch (err) {
+    console.error('getSessionStickiness 异常:', err)
   }
   return null
 }
@@ -51,7 +52,7 @@ export async function recordSessionSuccessModel(
   providerId: string,
   modelId: string
 ): Promise<void> {
-  if (!sessionId || !providerId || !modelId) return
+  if (!sessionId || !providerId || !modelId || !env?.KV) return
 
   const now = Date.now()
   let record = await getSessionStickiness(env, sessionId)
@@ -63,14 +64,11 @@ export async function recordSessionSuccessModel(
     }
   }
 
-  // 检查是否已经是最近一条，避免频繁写 KV
   const top = record.history[0]
   if (top && top.providerId === providerId && top.modelId === modelId && (now - top.lastSuccessAt < 60000)) {
-    // 1 分钟内相同会话同一模型连续调用，不重复触发 KV 写入，节省免费写配额
     return
   }
 
-  // 移出已存在的同模型记录（提到最前）
   record.history = record.history.filter(h => !(h.providerId === providerId && h.modelId === modelId))
   record.history.unshift({
     providerId,
@@ -78,131 +76,164 @@ export async function recordSessionSuccessModel(
     lastSuccessAt: now,
   })
 
-  // 约束：单会话最多保存最近 5 条成功模型
   if (record.history.length > MAX_SESSION_STICKINESS_HISTORY) {
     record.history = record.history.slice(0, MAX_SESSION_STICKINESS_HISTORY)
   }
   record.updatedAt = now
 
-  // 更新内存缓存
   stickinessMemoryCache[sessionId] = record
 
-  // 写入 KV（设置过期时间 TTL，自动清理不占配额）
-  const key = `${KV_KEYS.SESSION_STICKINESS_PREFIX}${sessionId}`
-  await env.KV.put(key, JSON.stringify(record), {
-    expirationTtl: SESSION_STICKINESS_TTL_SECONDS,
-  })
+  try {
+    const key = `${KV_KEYS.SESSION_STICKINESS_PREFIX}${sessionId}`
+    await env.KV.put(key, JSON.stringify(record), {
+      expirationTtl: SESSION_STICKINESS_TTL_SECONDS,
+    })
+  } catch (err) {
+    console.error('recordSessionSuccessModel 异常:', err)
+  }
 }
 
-// ===== 游标、探测日志与真实业务延迟持久化（三大隔离数据通道） =====
+// ===== 游标、探测日志与真实业务延迟持久化 =====
 
-// 1. 海选轮询游标（持久化至 KV，实例重启不丢失）
 export async function getAuditionCursor(env: Env): Promise<AuditionCursor> {
-  const data = await env.KV.get(KV_KEYS.PROBE_AUDITION_CURSOR)
-  if (!data) return { providerIndex: 0, modelIndex: 0 }
+  if (!env?.KV) return { providerIndex: 0, modelIndex: 0 }
   try {
+    const data = await env.KV.get(KV_KEYS.PROBE_AUDITION_CURSOR)
+    if (!data) return { providerIndex: 0, modelIndex: 0 }
     return JSON.parse(data) as AuditionCursor
-  } catch {
+  } catch (err) {
+    console.error('getAuditionCursor 异常:', err)
     return { providerIndex: 0, modelIndex: 0 }
   }
 }
 
 export async function saveAuditionCursor(env: Env, cursor: AuditionCursor): Promise<void> {
-  await env.KV.put(KV_KEYS.PROBE_AUDITION_CURSOR, JSON.stringify(cursor))
+  if (!env?.KV) return
+  try {
+    await env.KV.put(KV_KEYS.PROBE_AUDITION_CURSOR, JSON.stringify(cursor))
+  } catch (err) {
+    console.error('saveAuditionCursor 异常:', err)
+  }
 }
 
-// 2. 海选探测日志与 OpenClaw 专属探测日志（完全隔离，仅保留最近20条，不参与真实业务淘汰）
 export async function getProbeLogs(env: Env, type: 'audition' | 'openclaw'): Promise<ProbeResult[]> {
-  const key = type === 'audition' ? KV_KEYS.PROBE_AUDITION_LOGS : KV_KEYS.PROBE_OPENCLAW_LOGS
-  const data = await env.KV.get(key)
-  return data ? JSON.parse(data) : []
+  if (!env?.KV) return []
+  try {
+    const key = type === 'audition' ? KV_KEYS.PROBE_AUDITION_LOGS : KV_KEYS.PROBE_OPENCLAW_LOGS
+    const data = await env.KV.get(key)
+    return data ? JSON.parse(data) : []
+  } catch (err) {
+    console.error('getProbeLogs 异常:', err)
+    return []
+  }
 }
 
 export async function recordProbeLog(env: Env, result: ProbeResult): Promise<void> {
-  const key = result.type === 'audition' ? KV_KEYS.PROBE_AUDITION_LOGS : KV_KEYS.PROBE_OPENCLAW_LOGS
-  const list = await getProbeLogs(env, result.type)
-  list.unshift(result)
-  // 最多保留最新 20 条探测日志，减少 KV 体积
-  const trimmed = list.slice(0, 20)
-  await env.KV.put(key, JSON.stringify(trimmed))
+  if (!env?.KV) return
+  try {
+    const key = result.type === 'audition' ? KV_KEYS.PROBE_AUDITION_LOGS : KV_KEYS.PROBE_OPENCLAW_LOGS
+    const list = await getProbeLogs(env, result.type)
+    list.unshift(result)
+    const trimmed = list.slice(0, 20)
+    await env.KV.put(key, JSON.stringify(trimmed))
+  } catch (err) {
+    console.error('recordProbeLog 异常:', err)
+  }
 }
 
-// 3. 真实业务延迟样本（每个模型保留最近 50 条，超出丢弃旧样本，梯队动态淘汰仅采信此数据）
 const MAX_BUSINESS_LATENCY_SAMPLES = 50
 
 export async function getModelBusinessLatency(env: Env, providerId: string, modelId: string): Promise<ModelBusinessLatencyStats> {
-  const key = `${KV_KEYS.BUSINESS_LATENCY_PREFIX}${providerId}:${modelId}`
-  const data = await env.KV.get(key)
-  if (data) {
-    try {
-      return JSON.parse(data) as ModelBusinessLatencyStats
-    } catch { /* ignore */ }
-  }
-  return {
+  const fallback: ModelBusinessLatencyStats = {
     providerId,
     modelId,
     samples: [],
     averageLatencyMs: 0,
     lastUpdated: Date.now(),
   }
+  if (!env?.KV) return fallback
+  try {
+    const key = `${KV_KEYS.BUSINESS_LATENCY_PREFIX}${providerId}:${modelId}`
+    const data = await env.KV.get(key)
+    if (data) {
+      return JSON.parse(data) as ModelBusinessLatencyStats
+    }
+  } catch (err) {
+    console.error('getModelBusinessLatency 异常:', err)
+  }
+  return fallback
 }
 
-// 记录单次真实业务延迟（仅限真实业务 API 成功响应时调用）
 export async function recordBusinessLatency(
   env: Env,
   providerId: string,
   modelId: string,
   sample: BusinessLatencySample
 ): Promise<void> {
-  const key = `${KV_KEYS.BUSINESS_LATENCY_PREFIX}${providerId}:${modelId}`
-  const stats = await getModelBusinessLatency(env, providerId, modelId)
+  if (!env?.KV) return
+  try {
+    const key = `${KV_KEYS.BUSINESS_LATENCY_PREFIX}${providerId}:${modelId}`
+    const stats = await getModelBusinessLatency(env, providerId, modelId)
 
-  // 滑动窗口：追加新样本到头部，保留最多 50 条
-  stats.samples.unshift(sample)
-  if (stats.samples.length > MAX_BUSINESS_LATENCY_SAMPLES) {
-    stats.samples = stats.samples.slice(0, MAX_BUSINESS_LATENCY_SAMPLES)
+    stats.samples.unshift(sample)
+    if (stats.samples.length > MAX_BUSINESS_LATENCY_SAMPLES) {
+      stats.samples = stats.samples.slice(0, MAX_BUSINESS_LATENCY_SAMPLES)
+    }
+
+    const validSamples = stats.samples.filter(s => s.success && s.latencyMs > 0)
+    if (validSamples.length > 0) {
+      const total = validSamples.reduce((sum, s) => sum + s.latencyMs, 0)
+      stats.averageLatencyMs = Math.round(total / validSamples.length)
+    } else {
+      stats.averageLatencyMs = sample.latencyMs
+    }
+    stats.lastUpdated = Date.now()
+
+    await env.KV.put(key, JSON.stringify(stats))
+  } catch (err) {
+    console.error('recordBusinessLatency 异常:', err)
   }
-
-  // 重新计算有效样本的真实平均延迟
-  const validSamples = stats.samples.filter(s => s.success && s.latencyMs > 0)
-  if (validSamples.length > 0) {
-    const total = validSamples.reduce((sum, s) => sum + s.latencyMs, 0)
-    stats.averageLatencyMs = Math.round(total / validSamples.length)
-  } else {
-    stats.averageLatencyMs = sample.latencyMs
-  }
-  stats.lastUpdated = Date.now()
-
-  await env.KV.put(key, JSON.stringify(stats))
 }
 
 // ===== 梯队池 CRUD =====
-// 从 KV 中获取三大梯队配置，若不存在则回退至默认配置（保障单次写入）
+
 export async function getTierConfig(env: Env): Promise<TierConfig> {
-  const data = await env.KV.get(KV_KEYS.TIERS)
-  if (!data) return DEFAULT_TIER_CONFIG
+  if (!env?.KV) return DEFAULT_TIER_CONFIG
   try {
+    const data = await env.KV.get(KV_KEYS.TIERS)
+    if (!data) return DEFAULT_TIER_CONFIG
     const parsed = JSON.parse(data) as TierConfig
     return {
       tier1: { ...DEFAULT_TIER_CONFIG.tier1, ...(parsed.tier1 || {}) },
       tier2: { ...DEFAULT_TIER_CONFIG.tier2, ...(parsed.tier2 || {}) },
       tier3: { ...DEFAULT_TIER_CONFIG.tier3, ...(parsed.tier3 || {}) },
     }
-  } catch {
+  } catch (err) {
+    console.error('getTierConfig 异常:', err)
     return DEFAULT_TIER_CONFIG
   }
 }
 
-// 将三大梯队配置一次性持久化至 KV
 export async function setTierConfig(env: Env, config: TierConfig): Promise<void> {
-  await env.KV.put(KV_KEYS.TIERS, JSON.stringify(config))
+  if (!env?.KV) return
+  try {
+    await env.KV.put(KV_KEYS.TIERS, JSON.stringify(config))
+  } catch (err) {
+    console.error('setTierConfig 异常:', err)
+  }
 }
 
 // ===== 提供商 CRUD =====
 
 export async function getProviders(env: Env): Promise<Provider[]> {
-  const data = await env.KV.get(KV_KEYS.PROVIDERS)
-  return data ? JSON.parse(data) : []
+  if (!env?.KV) return []
+  try {
+    const data = await env.KV.get(KV_KEYS.PROVIDERS)
+    return data ? JSON.parse(data) : []
+  } catch (err) {
+    console.error('getProviders 异常:', err)
+    return []
+  }
 }
 
 export async function getProvider(env: Env, id: string): Promise<Provider | null> {
@@ -211,7 +242,12 @@ export async function getProvider(env: Env, id: string): Promise<Provider | null
 }
 
 export async function setProviders(env: Env, providers: Provider[]): Promise<void> {
-  await env.KV.put(KV_KEYS.PROVIDERS, JSON.stringify(providers))
+  if (!env?.KV) return
+  try {
+    await env.KV.put(KV_KEYS.PROVIDERS, JSON.stringify(providers))
+  } catch (err) {
+    console.error('setProviders 异常:', err)
+  }
 }
 
 export async function addProvider(env: Env, provider: Provider): Promise<void> {
@@ -245,36 +281,64 @@ export async function createSession(env: Env, username: string, ttlSeconds: numb
     username,
     expiresAt: Date.now() + ttlSeconds * 1000,
   }
-  await env.KV.put(KV_KEYS.SESSION_PREFIX + sessionId, JSON.stringify(session), {
-    expirationTtl: ttlSeconds,
-  })
+  if (env?.KV) {
+    try {
+      await env.KV.put(KV_KEYS.SESSION_PREFIX + sessionId, JSON.stringify(session), {
+        expirationTtl: ttlSeconds,
+      })
+    } catch (err) {
+      console.error('createSession 写入 KV 异常:', err)
+    }
+  }
   return sessionId
 }
 
 export async function getSession(env: Env, sessionId: string): Promise<Session | null> {
-  const data = await env.KV.get(KV_KEYS.SESSION_PREFIX + sessionId)
-  if (!data) return null
-  const session: Session = JSON.parse(data)
-  if (session.expiresAt < Date.now()) {
-    await deleteSession(env, sessionId)
+  if (!env?.KV || !sessionId) return null
+  try {
+    const data = await env.KV.get(KV_KEYS.SESSION_PREFIX + sessionId)
+    if (!data) return null
+    const session: Session = JSON.parse(data)
+    if (session.expiresAt < Date.now()) {
+      await deleteSession(env, sessionId)
+      return null
+    }
+    return session
+  } catch (err) {
+    console.error('getSession 异常:', err)
     return null
   }
-  return session
 }
 
 export async function deleteSession(env: Env, sessionId: string): Promise<void> {
-  await env.KV.delete(KV_KEYS.SESSION_PREFIX + sessionId)
+  if (!env?.KV || !sessionId) return
+  try {
+    await env.KV.delete(KV_KEYS.SESSION_PREFIX + sessionId)
+  } catch (err) {
+    console.error('deleteSession 异常:', err)
+  }
 }
 
 // ===== 转发 Key =====
 
 export async function getProxyKeys(env: Env): Promise<ProxyKey[]> {
-  const data = await env.KV.get(KV_KEYS.PROXY_KEYS)
-  return data ? JSON.parse(data) : []
+  if (!env?.KV) return []
+  try {
+    const data = await env.KV.get(KV_KEYS.PROXY_KEYS)
+    return data ? JSON.parse(data) : []
+  } catch (err) {
+    console.error('getProxyKeys 异常:', err)
+    return []
+  }
 }
 
 export async function setProxyKeys(env: Env, keys: ProxyKey[]): Promise<void> {
-  await env.KV.put(KV_KEYS.PROXY_KEYS, JSON.stringify(keys))
+  if (!env?.KV) return
+  try {
+    await env.KV.put(KV_KEYS.PROXY_KEYS, JSON.stringify(keys))
+  } catch (err) {
+    console.error('setProxyKeys 异常:', err)
+  }
 }
 
 export async function addProxyKey(env: Env, key: ProxyKey): Promise<void> {
@@ -315,39 +379,42 @@ export async function validateProxyKey(env: Env, key: string): Promise<boolean> 
 
 // ===== 初始数据填充 =====
 
-import { DEFAULT_PROVIDERS, PROXY_KEY_PREFIX } from './config'
-
 export async function seedInitialData(env: Env): Promise<void> {
-  const providers = await getProviders(env)
-  const migrationCompleted = await env.KV.get(KV_KEYS.OPENCODE_MIGRATION)
-  const opencode = DEFAULT_PROVIDERS.find((provider) => provider.id === 'opencode')
+  if (!env?.KV) return
+  try {
+    const providers = await getProviders(env)
+    const migrationCompleted = await env.KV.get(KV_KEYS.OPENCODE_MIGRATION)
+    const opencode = DEFAULT_PROVIDERS.find((provider) => provider.id === 'opencode')
 
-  if (!migrationCompleted) {
-    if (opencode && !providers.some((provider) => provider.id === opencode.id)) {
-      await setProviders(env, [
-        ...providers,
-        {
-          ...opencode,
-          apiKeys: opencode.apiKeys.map((key) => ({ ...key })),
-          models: opencode.models.map((model) => ({ ...model })),
-        },
-      ])
-    }
-    await env.KV.put(KV_KEYS.OPENCODE_MIGRATION, '1')
-  }
-
-  // 仅首次运行时创建测试转发 Key
-  if (providers.length === 0 && !migrationCompleted) {
-    const keys = await getProxyKeys(env)
-    if (keys.length === 0) {
-      const testKey = {
-        id: crypto.randomUUID(),
-        key: `${PROXY_KEY_PREFIX}${crypto.randomUUID().replace(/-/g, '').substring(0, 16)}`,
-        name: '测试 Key',
-        enabled: true,
-        createdAt: new Date().toISOString(),
+    if (!migrationCompleted) {
+      if (opencode && !providers.some((provider) => provider.id === opencode.id)) {
+        await setProviders(env, [
+          ...providers,
+          {
+            ...opencode,
+            apiKeys: opencode.apiKeys.map((key) => ({ ...key })),
+            models: opencode.models.map((model) => ({ ...model })),
+          },
+        ])
       }
-      await addProxyKey(env, testKey)
+      await env.KV.put(KV_KEYS.OPENCODE_MIGRATION, '1')
     }
+
+    if (providers.length === 0 && !migrationCompleted) {
+      const keys = await getProxyKeys(env)
+      if (keys.length === 0) {
+        const testKey = {
+          id: crypto.randomUUID(),
+          key: `${PROXY_KEY_PREFIX}${crypto.randomUUID().replace(/-/g, '').substring(0, 16)}`,
+          name: '测试 Key',
+          enabled: true,
+          createdAt: new Date().toISOString(),
+        }
+        await addProxyKey(env, testKey)
+      }
+    }
+  } catch (err) {
+    console.error('seedInitialData 异常:', err)
   }
 }
+
