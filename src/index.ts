@@ -1,10 +1,11 @@
 /**
- * 版本号: v1.0.11
- * 模块: AI Gateway 主应用入口与路由配置（全流程防崩增强）
+ * 版本号: v1.0.12
+ * 模块: AI Gateway 主应用入口与路由配置（静态导入 Cookie，全流程防崩增强）
  */
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
+import { getCookie } from 'hono/cookie'
 import type { Env } from './types'
 import { adminAuthMiddleware, proxyKeyAuthMiddleware, handleLogin, handleLogout } from './auth'
 import { handleProxy, handleModels } from './proxy'
@@ -58,7 +59,6 @@ app.use('*', async (c, next) => {
 
 // ===== 首页 =====
 app.get('/', async (c) => {
-  const { getCookie } = await import('hono/cookie')
   // 兼顾 Cookie 与 URL 携带的会话 ID
   const sessionId = getCookie(c, 'session_id') || c.req.query('session_id')
   let isLoggedIn = false
@@ -71,7 +71,6 @@ app.get('/', async (c) => {
 
 // ===== 登录/退出 =====
 app.get('/admin/login', async (c) => {
-  const { getCookie } = await import('hono/cookie')
   const sessionId = getCookie(c, 'session_id') || c.req.query('session_id')
   // 若已存在有效登录会话，直接跳转至管理后台，无需重复登录
   if (sessionId) {
@@ -82,6 +81,7 @@ app.get('/admin/login', async (c) => {
   }
   return renderLoginPage(c)
 })
+
 app.post('/admin/login', handleLogin)
 app.get('/admin/logout', handleLogout)
 

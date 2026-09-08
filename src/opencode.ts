@@ -1,3 +1,7 @@
+/**
+ * 版本号: v1.0.12
+ * 模块: OpenCode 专用转发扩展（增加 env 变量空指针防护）
+ */
 import type { ApiKeyEntry, Env } from './types'
 
 export const OPENCODE_PROVIDER_ID = 'opencode'
@@ -44,11 +48,12 @@ export function filterOpenCodeModels<T extends { id?: unknown }>(models: T[]): T
 }
 
 export function resolveOpenCodeUrls(env: Env): string[] {
-  const raw = env.OPENCODE_MIRRORS_URL || ''
+  const raw = env?.OPENCODE_MIRRORS_URL || ''
   // 兼容换行符、逗号、空格分隔；过滤空白；全局去重
   const parts = raw.split('\n').flatMap(s => s.split(',')).map(s => s.trim()).filter(Boolean)
   return [...new Set(parts)]
 }
+
 
 function getMirrorOrder(urls: string[], random: () => number): string[] {
   if (urls.length === 0) return []
