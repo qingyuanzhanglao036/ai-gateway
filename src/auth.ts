@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.2
+ * 版本号: v1.0.3
  * 模块: 身份验证与管理员权限鉴权中间件（支持 iframe 预览环境与双通道会话凭据）
  */
 import { Context, Next } from 'hono'
@@ -11,6 +11,23 @@ import type { Env } from './types'
 // 默认管理员账号与密码（当 Cloudflare 环境变量未设置时作为安全兜底，避免 500 崩溃）
 const DEFAULT_ADMIN_USERNAME = 'admin'
 const DEFAULT_ADMIN_PASSWORD = 'admin123456'
+
+/**
+ * 环境变量与输入文本清洗函数
+ * 自动剥离字符串首尾包裹的英文单/双引号以及首尾多余空格
+ * 解决 GitHub Variables / Secrets 中误填带引号的值（如 "a521521b"）导致登录失败的问题
+ */
+export function cleanConfigString(val: string | undefined | null): string {
+  // 如果输入为空，返回空字符串
+  if (!val) return ''
+  // 1. 去除首尾空白字符
+  let str = val.trim()
+  // 2. 检查并剥离首尾匹配的单引号或双引号
+  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+    str = str.slice(1, -1).trim()
+  }
+  return str
+}
 
 /**
  * SHA-256 密码哈希函数
@@ -81,19 +98,23 @@ export async function adminAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
  * 校验用户提交的账号密码，验证成功后生成 Session 并写入 Cookie，同时返回 sessionId
  */
 export async function handleLogin(c: Context<{ Bindings: Env }>) {
-  // 解析用户提交的 JSON 请求体
-  const { username, password } = await c.req.json()
+  // 安全解析用户提交的 JSON 请求体
+  const body = await c.req.json().catch(() => ({}))
 
-  // 优先读取 Cloudflare 环境变量，若未配置则安全回退至默认账号，防止抛出 500 错误
-  const adminUser = c.env.ADMIN_USERNAME || DEFAULT_ADMIN_USERNAME
-  const adminPass = c.env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD
+  // 清洗前端输入的账号和密码，自动去除首尾空格
+  const username = cleanConfigString(body.username)
+  const password = cleanConfigString(body.password)
+
+  // 读取 Cloudflare 环境变量并自动清洗（剥离可能误填的外层引号与首尾空格），若未配置则安全回退至默认账号
+  const adminUser = cleanConfigString(c.env.ADMIN_USERNAME) || DEFAULT_ADMIN_USERNAME
+  const adminPass = cleanConfigString(c.env.ADMIN_PASSWORD) || DEFAULT_ADMIN_PASSWORD
 
   // 校验前端是否输入了用户名和密码
   if (!username || !password) {
     return c.json({ success: false, message: '请输入用户名和密码' }, 400)
   }
 
-  // 校验用户名是否匹配
+  // 校验用户名是否匹配（经过清洗后的对比）
   if (username !== adminUser) {
     return c.json({ success: false, message: '用户名或密码错误' }, 401)
   }
