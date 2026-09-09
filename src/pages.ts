@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.15
+ * 版本号: v1.0.18
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -42,6 +42,62 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
   const enabledProviders = providers.filter((provider) => provider.enabled)
   const allModelsCount = providers.reduce((total, provider) => total + provider.models.length, 0)
   const enabledModelsCount = enabledProviders.reduce((total, provider) => total + provider.models.filter((model) => model.enabled).length, 0)
+
+  // 顺风车打包一次性获取 OpenClaw 模型池信息与分类统计，减少不必要的内存及 KV 读写
+  const openclawModels = new Set<string>()
+  if (tierConfig.tier2 && tierConfig.tier2.models) {
+    tierConfig.tier2.models.forEach(m => {
+      openclawModels.add(`${m.providerId}/${m.modelId}`)
+    })
+  }
+
+  const countCategory = (catName: string) => {
+    let count = 0
+    enabledProviders.forEach(p => {
+      p.models.forEach(m => {
+        if (!m.enabled) return
+        const cat = m.category || detectModelCategory(m.id)
+        if (cat === catName) count++
+      })
+    })
+    return count
+  }
+
+  const countOpenClaw = () => {
+    let count = 0
+    enabledProviders.forEach(p => {
+      p.models.forEach(m => {
+        if (!m.enabled) return
+        const fullId = `${p.id}/${m.id}`
+        if (openclawModels.has(fullId)) count++
+      })
+    })
+    return count
+  }
+
+  const countStatus = (statusName: 'healthy' | 'cooling' | 'dead') => {
+    let count = 0
+    enabledProviders.forEach(p => {
+      p.models.forEach(m => {
+        if (!m.enabled) return
+        const isDead = m.status === 'dead'
+        const isCooling = !isDead && (m.status === 'cooling' || (m.cooldownUntil && m.cooldownUntil > Date.now()))
+        const status = isDead ? 'dead' : (isCooling ? 'cooling' : 'healthy')
+        if (status === statusName) count++
+      })
+    })
+    return count
+  }
+
+  const cntText = countCategory('text')
+  const cntImage = countCategory('image')
+  const cntMultimodal = countCategory('multimodal')
+  const cntOther = countCategory('other')
+  const cntOpenClaw = countOpenClaw()
+  
+  const cntHealthy = countStatus('healthy')
+  const cntCooling = countStatus('cooling')
+  const cntDead = countStatus('dead')
 
   // 辅助查找模型与供应商信息
   const provMap = new Map(providers.map(p => [p.id, p]))
@@ -303,38 +359,134 @@ main();</code></pre>
     <div class="section-heading">
       <div>
         <h2 id="directory-title">已配置模型索引</h2>
-        <p>点击模型 ID 即可复制；展示所有已启用的上游服务商与模型。</p>
+        <p>点击模型卡片即可复制完整的双段模型 ID (提供商/模型)；支持类型与健康状况的精细化多重过滤。</p>
       </div>
       <label class="search-field" for="model-search">
         <i class="fas fa-search" aria-hidden="true"></i>
         <span class="sr-only">搜索提供商或模型</span>
-        <input id="model-search" type="search" placeholder="搜索提供商或模型" autocomplete="off">
+        <input id="model-search" type="search" placeholder="输入关键字极速过滤模型或提供商" autocomplete="off">
       </label>
+    </div>
+
+    <!-- 极客双维度筛选工具栏 -->
+    <div class="filter-toolbar">
+      <div class="filter-group mb-2">
+        <span class="filter-label"><i class="fas fa-tags" style="color: var(--color-brand); font-size: 11px;"></i>模型类型:</span>
+        <button class="filter-btn active" data-cat-filter="all" type="button">全部 <span class="count-num">(${enabledModelsCount})</span></button>
+        <button class="filter-btn" data-cat-filter="text" type="button"><i class="fas fa-font"></i> 文本 <span class="count-num">(${cntText})</span></button>
+        <button class="filter-btn" data-cat-filter="openclaw" type="button"><i class="fas fa-bolt"></i> OpenClaw <span class="count-num">(${cntOpenClaw})</span></button>
+        <button class="filter-btn" data-cat-filter="image" type="button"><i class="fas fa-paint-brush"></i> 绘图 <span class="count-num">(${cntImage})</span></button>
+        <button class="filter-btn" data-cat-filter="multimodal" type="button"><i class="fas fa-eye"></i> 多模态 <span class="count-num">(${cntMultimodal})</span></button>
+        <button class="filter-btn" data-cat-filter="other" type="button"><i class="fas fa-cube"></i> 其他 <span class="count-num">(${cntOther})</span></button>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label"><i class="fas fa-heartbeat" style="color: var(--color-success-ink); font-size: 11px;"></i>健康状况:</span>
+        <button class="filter-btn active" data-health-filter="all" type="button">全部 <span class="count-num">(${enabledModelsCount})</span></button>
+        <button class="filter-btn" data-health-filter="healthy" type="button"><i class="fas fa-check-circle" style="color: var(--color-success-ink);"></i> 正常 <span class="count-num">(${cntHealthy})</span></button>
+        <button class="filter-btn" data-health-filter="cooling" type="button"><i class="fas fa-snowflake" style="color: oklch(50% 0.12 85);"></i> 冷却 <span class="count-num">(${cntCooling})</span></button>
+        <button class="filter-btn" data-health-filter="dead" type="button"><i class="fas fa-times-circle" style="color: var(--color-danger-ink);"></i> 失效 <span class="count-num">(${cntDead})</span></button>
+      </div>
     </div>
 
     <div class="provider-index" id="provider-index">
       ${enabledProviders.length ? enabledProviders.map((provider) => {
         const models = provider.models.filter((model) => model.enabled)
+        
+        // 计算当前 Provider 内模型各种状态的数量
+        const providerTotal = models.length
+        const providerHealthy = models.filter(m => m.status !== 'dead' && !(m.status === 'cooling' || (m.cooldownUntil && m.cooldownUntil > Date.now()))).length
+        const providerCooling = models.filter(m => m.status !== 'dead' && (m.status === 'cooling' || (m.cooldownUntil && m.cooldownUntil > Date.now()))).length
+        const providerDead = models.filter(m => m.status === 'dead').length
+
         return `<article class="provider-row" data-search="${escapePageHtml(`${provider.name} ${provider.id} ${models.map((model) => model.id).join(' ')}`.toLowerCase())}">
-          <div class="provider-row__identity">
-            <span class="provider-row__mark" aria-hidden="true">${escapePageHtml(provider.name.charAt(0).toUpperCase() || 'A')}</span>
-            <div>
-              <h3>${escapePageHtml(provider.name)}</h3>
-              <p><code>${escapePageHtml(provider.id)}</code><span>${(provider.apiType || 'openai') === 'anthropic' ? 'Anthropic' : 'OpenAI'} 兼容</span></p>
+          <div class="provider-row__header">
+            <div class="provider-row__identity">
+              <span class="provider-row__mark" aria-hidden="true">${escapePageHtml(provider.name.charAt(0).toUpperCase() || 'A')}</span>
+              <div>
+                <div class="provider-row__title-wrap">
+                  <h3 style="display: inline-block; margin-right: 8px;">${escapePageHtml(provider.name)}</h3>
+                  <code style="margin-right: 6px;">${escapePageHtml(provider.id)}</code>
+                  <span class="protocol-chip" style="min-height: 1.25rem; font-size: 10px; padding-inline: 6px;">${(provider.apiType || 'openai') === 'anthropic' ? 'Anthropic' : 'OpenAI'} 兼容</span>
+                </div>
+                <div class="provider-row__stats-row">
+                  <span>共 ${providerTotal} 个模型</span>
+                  <span style="color: var(--color-success-ink); font-weight: 500;"><i class="fas fa-check-circle"></i> ${providerHealthy} 正常</span>
+                  ${providerCooling > 0 ? `<span style="color: oklch(50% 0.12 85); font-weight: 500;"><i class="fas fa-snowflake"></i> ${providerCooling} 冷却</span>` : ''}
+                  ${providerDead > 0 ? `<span style="color: var(--color-danger-ink); font-weight: 500;"><i class="fas fa-times-circle"></i> ${providerDead} 失效</span>` : ''}
+                </div>
+              </div>
             </div>
           </div>
-          <div class="provider-row__models">
+          <div class="provider-row__models-grid">
             ${models.length ? models.map((model) => {
               const fullModel = `${provider.id}/${model.id}`
               const cat = model.category || detectModelCategory(model.id)
-              return `<button class="model-token copy-control" type="button" data-copy="${escapePageHtml(fullModel)}" title="分类: ${cat}"><code>${escapePageHtml(fullModel)}</code><i class="far fa-copy" aria-hidden="true"></i></button>`
+              const isDead = model.status === 'dead'
+              const isCooling = !isDead && (model.status === 'cooling' || (model.cooldownUntil && model.cooldownUntil > Date.now()))
+              const health = isDead ? 'dead' : (isCooling ? 'cooling' : 'healthy')
+              const isOpenClaw = openclawModels.has(fullModel)
+              
+              // 探测延迟与真实延迟
+              const key = `${provider.id}:${model.id}`
+              const latStats = latenciesMap[key] || { probeLatency: null, realLatency: null }
+              const probeMs = latStats.probeLatency
+              const realMs = latStats.realLatency
+
+              // 自动判定类型徽标与颜色
+              let catIcon = '<i class="fas fa-font"></i>'
+              let catLabel = '文本'
+              let catCls = 'tag-cat--text'
+              if (cat === 'image') {
+                catIcon = '<i class="fas fa-paint-brush"></i>'
+                catLabel = '绘图'
+                catCls = 'tag-cat--image'
+              } else if (cat === 'multimodal') {
+                catIcon = '<i class="fas fa-eye"></i>'
+                catLabel = '多模态'
+                catCls = 'tag-cat--multimodal'
+              } else if (cat === 'other') {
+                catIcon = '<i class="fas fa-cube"></i>'
+                catLabel = '其他'
+                catCls = 'tag-cat--other'
+              }
+
+              // 健康状态徽标
+              let healthBadge = `<span class="tag-health tag-health--ok"><i class="fas fa-check-circle"></i>正常</span>`
+              if (isDead) {
+                healthBadge = `<span class="tag-health tag-health--err"><i class="fas fa-times-circle"></i>失效</span>`
+              } else if (isCooling) {
+                healthBadge = `<span class="tag-health tag-health--warn"><i class="fas fa-snowflake"></i>冷却</span>`
+              }
+
+              // OpenClaw 徽章
+              const clawBadge = isOpenClaw 
+                ? `<span class="tag-claw tag-claw--yes"><i class="fas fa-bolt"></i>OpenClaw</span>`
+                : `<span class="tag-claw tag-claw--no"><i class="fas fa-ban"></i>非OpenClaw</span>`
+
+              // 延迟指标
+              const displayMs = realMs || probeMs
+              const latencyBadge = displayMs
+                ? `<span class="tag-latency" title="探测延迟: ${probeMs ? `${probeMs}ms` : '暂无'} | 真实调用延迟: ${realMs ? `${realMs}ms` : '暂无'}"><i class="fas fa-signal"></i> ${displayMs}ms</span>`
+                : ''
+
+              return `<div class="model-grid-item copy-control" data-copy="${escapePageHtml(fullModel)}" data-cat="${cat}" data-claw="${isOpenClaw ? 'true' : 'false'}" data-health="${health}">
+                <div class="model-grid-item__header">
+                  <span class="model-grid-item__name">${escapePageHtml(model.id)}</span>
+                  <button class="copy-btn" type="button" aria-label="复制模型名"><i class="far fa-copy"></i></button>
+                </div>
+                <div class="model-grid-item__badges">
+                  <span class="tag-cat ${catCls}">${catIcon} ${catLabel}</span>
+                  ${clawBadge}
+                  ${healthBadge}
+                  ${latencyBadge}
+                </div>
+              </div>`
             }).join('') : '<span class="empty-inline">暂无启用模型</span>'}
           </div>
-          <span class="status-badge status-badge--on"><i aria-hidden="true"></i>已启用</span>
         </article>`
       }).join('') : `<div class="empty-state"><i class="fas fa-cubes" aria-hidden="true"></i><h3>尚无可用模型</h3><p>管理员启用提供商和模型后，它们会出现在这里。</p><a class="btn btn-p" href="/admin">前往管理控制台</a></div>`}
     </div>
-    <div id="search-empty" class="empty-state hd"><i class="fas fa-search" aria-hidden="true"></i><h3>没有匹配结果</h3><p>请尝试输入提供商名称、ID 或模型名称。</p></div>
+    <div id="search-empty" class="empty-state hd"><i class="fas fa-search" aria-hidden="true"></i><h3>没有匹配结果</h3><p>请尝试选择不同的过滤标签或输入更简短的关键词。</p></div>
   </section>
   ` : `
   <!-- 节点受保护隐蔽模式 (未登录) -->
@@ -379,17 +531,18 @@ ${renderSiteFooter(SITE_CONFIG.title)}
   document.querySelectorAll('.copy-control').forEach(function (button) {
     button.addEventListener('click', async function () {
       var text = button.getAttribute('data-copy') || ''
-      var icon = button.querySelector('i')
+      var icon = button.querySelector('.copy-btn i, i')
       var label = button.querySelector('span')
       try {
         await navigator.clipboard.writeText(text)
         button.setAttribute('data-state', 'success')
+        var originalIconCls = icon ? icon.className : ''
         if (icon) icon.className = 'fas fa-check c-s'
         if (label) label.textContent = '已复制'
         if (status) status.textContent = '已复制 ' + text
         window.setTimeout(function () {
           button.removeAttribute('data-state')
-          if (icon) icon.className = 'far fa-copy'
+          if (icon) icon.className = originalIconCls || 'far fa-copy'
           if (label) label.textContent = '复制调用名'
         }, 1800)
       } catch (error) {
@@ -402,16 +555,82 @@ ${renderSiteFooter(SITE_CONFIG.title)}
   var search = document.getElementById('model-search')
   var rows = Array.from(document.querySelectorAll('.provider-row'))
   var empty = document.getElementById('search-empty')
-  if (search) search.addEventListener('input', function () {
-    var query = search.value.trim().toLowerCase()
-    var visible = 0
+
+  var currentCat = 'all'
+  var currentHealth = 'all'
+
+  function applyFilters() {
+    var query = search ? search.value.trim().toLowerCase() : ''
+    var visibleProviders = 0
+
     rows.forEach(function (row) {
-      var matched = !query || (row.getAttribute('data-search') || '').includes(query)
-      row.classList.toggle('hd', !matched)
-      if (matched) visible++
+      var modelCards = Array.from(row.querySelectorAll('.model-grid-item'))
+      var visibleModelsInRow = 0
+
+      modelCards.forEach(function (card) {
+        var cardCat = card.getAttribute('data-cat') || ''
+        var cardClaw = card.getAttribute('data-claw') === 'true'
+        var cardHealth = card.getAttribute('data-health') || ''
+        var cardCopy = (card.getAttribute('data-copy') || '').toLowerCase()
+
+        // 搜索过滤：提供商信息或模型ID匹配
+        var matchSearch = !query || cardCopy.includes(query) || (row.getAttribute('data-search') || '').includes(query)
+
+        // 分类过滤
+        var matchCat = true
+        if (currentCat !== 'all') {
+          if (currentCat === 'openclaw') {
+            matchCat = cardClaw
+          } else {
+            matchCat = (cardCat === currentCat)
+          }
+        }
+
+        // 健康状况过滤
+        var matchHealth = (currentHealth === 'all') || (cardHealth === currentHealth)
+
+        var isVisible = matchSearch && matchCat && matchHealth
+        card.classList.toggle('hd', !isVisible)
+        if (isVisible) {
+          visibleModelsInRow++
+        }
+      })
+
+      // 如果没有任何符合过滤条件的项目，则隐藏提供商卡片
+      var hasMatchedModels = visibleModelsInRow > 0
+      row.classList.toggle('hd', !hasMatchedModels)
+      if (hasMatchedModels) {
+        visibleProviders++
+      }
     })
-    if (empty) empty.classList.toggle('hd', visible > 0 || !query)
+
+    if (empty) {
+      empty.classList.toggle('hd', visibleProviders > 0)
+    }
+  }
+
+  // 绑定过滤按钮事件
+  document.querySelectorAll('[data-cat-filter]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      btn.parentElement.querySelectorAll('[data-cat-filter]').forEach(function (b) { b.classList.remove('active') })
+      btn.classList.add('active')
+      currentCat = btn.getAttribute('data-cat-filter') || 'all'
+      applyFilters()
+    })
   })
+
+  document.querySelectorAll('[data-health-filter]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      btn.parentElement.querySelectorAll('[data-health-filter]').forEach(function (b) { b.classList.remove('active') })
+      btn.classList.add('active')
+      currentHealth = btn.getAttribute('data-health-filter') || 'all'
+      applyFilters()
+    })
+  })
+
+  if (search) {
+    search.addEventListener('input', applyFilters)
+  }
 })()
 </script>
 </body></html>`)
@@ -545,6 +764,8 @@ export async function renderAdminPage(c: Context<{ Bindings: Env }>) {
     getTierConfig(c.env),
     getCustomRoutes(c.env),
   ])
+  // 顺风车并行拉取三大梯队当前在席模型的双延迟数据，准备同步至管理界面
+  const latenciesMap = await getTierModelLatencies(c.env, tierConfig)
   const enabledProvidersCount = providers.filter((provider) => provider.enabled).length
   const modelsCount = providers.reduce((total, provider) => total + provider.models.length, 0)
   const enabledModelsCount = providers.reduce((total, provider) => total + provider.models.filter((model) => model.enabled).length, 0)
@@ -870,6 +1091,7 @@ let stagedProviders = ${JSON.stringify(providers).replace(/</g, '\\u003c')};
 let stagedProxyKeys = ${JSON.stringify(proxyKeys).replace(/</g, '\\u003c')};
 let stagedTiers = ${JSON.stringify(tierConfig).replace(/</g, '\\u003c')};
 let stagedCustomRoutes = ${JSON.stringify(customRoutes).replace(/</g, '\\u003c')};
+let latenciesMap = ${JSON.stringify(latenciesMap).replace(/</g, '\\u003c')}; // 同步前台海选与实机探测双指标延迟数据
 let unsavedChangesCount = 0;
 
 function markUnsaved() {
@@ -1031,11 +1253,27 @@ function renderTierPools() {
           else if (cat === 'multimodal') catBadge = '<span class="cat-chip cat-chip--multimodal"><i class="fas fa-eye"></i>多模态</span>'
           else if (cat === 'other') catBadge = '<span class="cat-chip cat-chip--other"><i class="fas fa-cube"></i>其他</span>'
 
+          // 关键逻辑：从 latenciesMap 中匹配当前梯队席位模型的定时探测与真实用户调用双延迟，并在控制台直接渲染，方便调优
+          const key = m.providerId + ':' + m.modelId
+          const stats = (typeof latenciesMap !== 'undefined' && latenciesMap && latenciesMap[key]) || { probeLatency: null, realLatency: null }
+          const probeMs = stats.probeLatency
+          const realMs = stats.realLatency
+
+          const latHtml = '<div class="tier-model-latencies">' +
+            '<span class="latency-badge ' + (probeMs ? 'latency-badge--probe' : 'latency-badge--none') + '" title="最近巡检探测延迟">' +
+              '<i class="fas fa-bolt"></i>探测: ' + (probeMs ? probeMs + 'ms' : '未测') +
+            '</span>' +
+            '<span class="latency-badge ' + (realMs ? 'latency-badge--real' : 'latency-badge--none') + '" title="真实用户平均延迟">' +
+              '<i class="fas fa-chart-bar"></i>真实: ' + (realMs ? realMs + 'ms' : '无') +
+            '</span>' +
+          '</div>'
+
           return '<div class="tier-model-item">' +
             '<div class="tier-model-item__info">' +
               '<span class="tier-model-item__prov">' + escapeHtml(pName) + '</span>' +
               '<strong>' + escapeHtml(m.modelId) + '</strong>' +
               catBadge +
+              latHtml +
             '</div>' +
             '<button class="icon-btn" data-tier="' + item.key + '" data-idx="' + idx + '" onclick="removeModelFromTier(this.dataset.tier, parseInt(this.dataset.idx, 10))" title="移出梯队" aria-label="移出梯队">' +
               '<i class="fas fa-times"></i>' +

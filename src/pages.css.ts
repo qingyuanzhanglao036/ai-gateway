@@ -227,17 +227,78 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
 .search-field { position: relative; width: 100%; }
 .search-field > i { position: absolute; inset-inline-start: var(--space-xs); inset-block-start: 50%; color: var(--color-muted); transform: translateY(-50%); }
 .search-field input { padding-inline-start: var(--space-lg); }
-.provider-index { border-block-start: .0625rem solid var(--color-rule-2); }
-.provider-row { min-width: 0; padding-block: var(--space-md); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-md); align-items: start; border-block-end: .0625rem solid var(--color-rule); }
-.provider-row__identity { min-width: 0; display: flex; align-items: center; gap: var(--space-xs); }
-.provider-row__mark, .provider-avatar { width: 2.5rem; height: 2.5rem; flex: 0 0 auto; display: grid; place-items: center; border: .0625rem solid var(--color-rule-2); border-radius: var(--radius-control); background: var(--color-paper-2); color: var(--color-ink); font-family: var(--font-display); font-weight: 600; }
-.provider-row h3 { font-size: var(--text-md); }
-.provider-row__identity p { margin-block-start: var(--space-3xs); display: flex; flex-wrap: wrap; gap: var(--space-2xs); color: var(--color-muted); font-size: var(--text-xs); }
-.provider-row__identity code { color: var(--color-ink-2); }
+.provider-index { border-block-start: none; display: flex; flex-direction: column; gap: var(--space-md); margin-block-start: var(--space-md); } /* 重构：已配置模型索引升级为卡片网格布局，外层无顶边框，改用整齐的 Flex 卡片间距 */
+
+/* 双维度筛选工具栏 */
+.filter-toolbar { display: flex; flex-direction: column; gap: var(--space-xs); margin-block-start: var(--space-xs); margin-block-end: var(--space-md); padding: 12px 16px; background: var(--color-paper-2); border-radius: var(--radius-panel); border: 1px solid var(--color-rule); }
+.filter-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.filter-label { font-size: var(--text-xs); font-weight: 600; color: var(--color-ink-2); display: inline-flex; align-items: center; gap: 4px; min-width: 3.5rem; }
+.filter-btn { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); font-weight: 500; padding: 4px 10px; border-radius: var(--radius-round); background: var(--color-paper); border: 1px solid var(--color-rule); color: var(--color-ink-2); cursor: pointer; transition: all var(--dur-fast); white-space: nowrap; user-select: none; }
+.filter-btn:hover { border-color: var(--color-muted); background: var(--color-paper-2); }
+.filter-btn.active { background: var(--color-accent-soft); color: var(--color-focus); border-color: var(--color-focus); font-weight: 600; }
+.filter-btn .count-num { opacity: 0.6; font-size: .6875rem; font-family: var(--font-mono); }
+
+/* 重构：提供商外壳卡片 */
+.provider-row { min-width: 0; padding: var(--space-md) var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); border: .0625rem solid var(--color-rule-2); border-radius: var(--radius-panel); background: var(--color-paper-2); transition: all var(--dur-fast) ease; }
+.provider-row:hover { border-color: var(--color-accent); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03); }
+.provider-row__header { display: flex; flex-direction: column; gap: var(--space-xs); border-block-end: 1px dashed var(--color-rule); padding-block-end: 12px; }
+@media (min-width: 32rem) {
+  .provider-row__header { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--space-md); }
+}
+.provider-row__identity { min-width: 0; display: flex; align-items: center; gap: var(--space-sm); }
+.provider-row__title-wrap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.provider-row__stats-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: var(--text-xs); color: var(--color-muted); margin-block-start: 4px; }
+.provider-row__stats-row span { display: inline-flex; align-items: center; gap: 4px; }
+
+/* 重构：子卡格栅网格 */
+.provider-row__models-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; width: 100%; }
+.model-grid-item { background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; position: relative; transition: all var(--dur-fast); cursor: pointer; user-select: none; }
+.model-grid-item:hover { border-color: var(--color-accent); box-shadow: 0 2px 8px rgba(0,0,0,0.03); transform: translateY(-1px); }
+.model-grid-item__header { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.model-grid-item__name { font-family: var(--font-mono); font-size: .8125rem; font-weight: 600; color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.model-grid-item .copy-btn { border: none; background: transparent; color: var(--color-muted); opacity: 0.4; cursor: pointer; padding: 2px; font-size: .75rem; transition: all var(--dur-fast); display: flex; align-items: center; justify-content: center; }
+.model-grid-item:hover .copy-btn { opacity: 0.8; color: var(--color-ink); }
+.model-grid-item[data-state="success"] { border-color: var(--color-success); background: var(--color-success-soft); }
+.model-grid-item[data-state="success"] .model-grid-item__name { color: var(--color-success-ink); }
+.model-grid-item[data-state="success"] .copy-btn { color: var(--color-success-ink); opacity: 1; }
+
+.model-grid-item__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+
+/* 细分子卡片徽章 */
+.tag-cat, .tag-claw, .tag-health, .tag-latency { display: inline-flex; align-items: center; gap: 2px; font-size: .625rem; font-weight: 600; padding: 1px 4px; border-radius: 3px; white-space: nowrap; border: 1px solid transparent; }
+.tag-cat--text { background: oklch(97% 0.015 240); color: oklch(35% 0.11 240); border-color: oklch(91% 0.03 240); }
+.tag-cat--image { background: oklch(97% 0.02 300); color: oklch(38% 0.13 300); border-color: oklch(91% 0.04 300); }
+.tag-cat--multimodal { background: oklch(97% 0.03 70); color: oklch(42% 0.13 70); border-color: oklch(92% 0.04 70); }
+.tag-cat--other { background: var(--color-paper-3); color: var(--color-muted); border-color: var(--color-rule); }
+
+.tag-claw--yes { background: oklch(96% 0.015 150); color: oklch(40% 0.12 150); border-color: oklch(90% 0.03 150); }
+.tag-claw--no { background: var(--color-paper-3); color: var(--color-muted); border-color: var(--color-rule); }
+
+.tag-health--ok { background: var(--color-success-soft); color: var(--color-success-ink); border-color: oklch(88% 0.02 142); }
+.tag-health--warn { background: oklch(96% 0.015 85); color: oklch(50% 0.12 85); border-color: oklch(90% 0.03 85); }
+.tag-health--err { background: var(--color-danger-soft); color: var(--color-danger-ink); border-color: oklch(88% 0.02 20); }
+
+.tag-latency { background: var(--color-accent-soft); color: var(--color-focus); border-color: oklch(88% 0.02 256); }
+
+.provider-row__mark, .provider-avatar { width: 2.75rem; height: 2.75rem; flex: 0 0 auto; display: grid; place-items: center; border: none; border-radius: var(--radius-control); background: var(--color-accent-soft); color: var(--color-focus); font-family: var(--font-display); font-weight: 700; font-size: var(--text-md); } /* 优化：字母头像改用品牌淡底色，无边框设计更显扁平化高端质感 */
+.provider-row h3 { font-size: var(--text-md); font-weight: 600; color: var(--color-ink); margin: 0; }
+.provider-row__identity p { margin-block-start: var(--space-3xs); display: flex; flex-wrap: wrap; gap: var(--space-2xs); color: var(--color-muted); font-size: var(--text-xs); align-items: center; }
+.provider-row__identity code { color: var(--color-ink-2); background: var(--color-paper-2); padding: 1px 4px; border-radius: 4px; }
 .provider-row__models { min-width: 0; display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
-.model-token { max-width: 100%; min-height: var(--control-h-sm); padding-inline: var(--space-xs); display: inline-flex; align-items: center; gap: var(--space-2xs); border-color: var(--color-rule); background: var(--color-paper-2); color: var(--color-ink-2); }
-.model-token code { overflow: hidden; font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
-.model-token i { color: var(--color-muted); }
+.model-token { max-width: 100%; min-height: var(--control-h-sm); padding: 4px 10px; display: inline-flex; align-items: center; gap: var(--space-2xs); border: .0625rem solid var(--color-rule); border-radius: var(--radius-round); font-size: var(--text-xs); font-weight: 500; transition: all var(--dur-fast) ease; background: var(--color-paper-2); color: var(--color-ink-2); } /* 重构：调用名变更为高级药丸胶囊形态，自带过渡 */
+.model-token code { overflow: hidden; font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.model-token i { color: currentColor; opacity: 0.7; } /* 图标颜色随文字主色而定，带轻微不透明度 */
+.model-token i.far.fa-copy { margin-inline-start: 4px; opacity: 0.4; transition: opacity var(--dur-fast); }
+.model-token:hover i.far.fa-copy { opacity: 0.8; }
+/* 优化：三种核心模型分类药丸的精美彩色搭配，低饱和度安全色彩，保证护眼与高对比度 */
+.model-token--text { background: oklch(97% 0.015 240); color: oklch(35% 0.11 240); border-color: oklch(91% 0.03 240); }
+.model-token--text:hover { background: oklch(95% 0.02 240); border-color: oklch(80% 0.06 240); }
+.model-token--image { background: oklch(97% 0.02 300); color: oklch(38% 0.13 300); border-color: oklch(91% 0.04 300); }
+.model-token--image:hover { background: oklch(94% 0.03 300); border-color: oklch(80% 0.08 300); }
+.model-token--multimodal { background: oklch(97% 0.03 70); color: oklch(42% 0.13 70); border-color: oklch(92% 0.04 70); }
+.model-token--multimodal:hover { background: oklch(94% 0.04 70); border-color: oklch(82% 0.08 70); }
+.model-token--other { background: var(--color-paper-3); color: var(--color-muted); border-color: var(--color-rule); }
+.model-token--other:hover { background: var(--color-paper-2); border-color: var(--color-muted); }
 .status-badge, .bd, .protocol-chip, .status-dot { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); width: max-content; min-height: 1.75rem; padding-inline: var(--space-xs); border-radius: var(--radius-round); font-size: var(--text-xs); font-weight: 600; white-space: nowrap; }
 .status-badge i, .status-dot i { width: .4375rem; height: .4375rem; border-radius: 50%; background: currentColor; }
 .status-badge--on, .bd-on, .status-dot--online { background: var(--color-success-soft); color: var(--color-success-ink); }
@@ -432,7 +493,7 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
   .metric:nth-child(even) { border-inline-end: .0625rem solid var(--color-rule); }
   .metric:nth-child(n+3) { border-block-start: 0; }
   .section-heading { grid-template-columns: minmax(0, 1fr) minmax(16rem, .45fr); }
-  .provider-row { grid-template-columns: minmax(13rem, .7fr) minmax(0, 1.5fr) auto; align-items: center; }
+  .provider-row { grid-template-columns: minmax(14rem, .8fr) minmax(0, 1.8fr) auto; }
   .site-footer__inner { flex-direction: row; align-items: center; justify-content: space-between; }
   .auth-context, .auth-form-wrap { padding: var(--space-2xl); }
   .fr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -558,18 +619,15 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
 .tier-pool-box__alias { font-family: var(--font-mono); font-size: .75rem; color: var(--color-accent); background: var(--color-accent-soft); padding: 2px 6px; border-radius: 4px; display: inline-block; margin-block-start: 2px; }
 .tier-seat-badge { font-family: var(--font-mono); font-size: .75rem; font-weight: 600; padding: 3px 8px; border-radius: var(--radius-round); background: var(--color-paper-2); border: 1px solid var(--color-rule); }
 .tier-seat-badge--full { background: oklch(92% 0.12 85); color: oklch(35% 0.1 75); }
-.tier-model-list { display: flex; flex-direction: column; gap: 8px; min-height: 80px; }
-.tier-model-item { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: var(--radius-control); font-size: .8125rem; }
-@media (min-width: 32rem) {
-  .tier-model-item { flex-direction: row; align-items: center; justify-content: space-between; }
-}
-.tier-model-item__info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; min-width: 0; word-break: break-all; white-space: normal; }
-.tier-model-item__info strong { font-family: var(--font-mono); font-weight: 600; color: var(--color-ink); word-break: break-all; }
-.tier-model-item__prov { font-size: .6875rem; color: var(--color-muted); background: var(--color-paper-3); padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+.tier-model-list { display: flex; flex-direction: column; gap: 6px; min-height: 60px; } /* 优化：缩窄列表中的垂直模型间距 */
+.tier-model-item { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 8px; background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: var(--radius-control); font-size: .75rem; } /* 优化：卡片内边距从 10px 降至 5px，默认全屏宽度都采用横向排列，极致节省纵向高度 */
+.tier-model-item__info { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex: 1; min-width: 0; word-break: break-all; white-space: normal; } /* 优化：元素间距降至 4px，自动流式换行对齐 */
+.tier-model-item__info strong { font-family: var(--font-mono); font-weight: 600; color: var(--color-ink); word-break: break-all; font-size: .75rem; } /* 优化：模型名文字降至 12px (.75rem) */
+.tier-model-item__prov { font-size: .625rem; color: var(--color-muted); background: var(--color-paper-3); padding: 1px 3px; border-radius: 3px; white-space: nowrap; } /* 优化：提供商前缀微缩气泡化 */
 
 /* 双延迟指标指示器：海选定时探测延迟 与 真实用户调用平均延迟 */
-.tier-model-latencies { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-block-start: 2px; }
-.latency-badge { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: .6875rem; font-weight: 500; padding: 1px 6px; border-radius: 4px; white-space: nowrap; border: .0625rem solid transparent; }
+.tier-model-latencies { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.latency-badge { display: inline-flex; align-items: center; gap: 2px; font-family: var(--font-mono); font-size: .625rem; font-weight: 500; padding: 1px 4px; border-radius: 3px; white-space: nowrap; border: .0625rem solid transparent; } /* 优化：延迟指标卡片微缩化，更利于在卡片内紧凑排列 */
 .latency-badge--probe { background: oklch(96% 0.015 85); color: oklch(50% 0.12 85); border-color: oklch(90% 0.030 85); }
 .latency-badge--real { background: var(--color-accent-soft); color: var(--color-focus); border-color: oklch(88% 0.020 256); }
 .latency-badge--none { background: var(--color-paper-3); color: var(--color-muted); border-color: var(--color-rule); }
