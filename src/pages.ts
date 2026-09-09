@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.29
+ * 版本号: v1.0.33
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -807,6 +807,7 @@ ${H('管理')}
         <a href="#overview">概览</a>
         <a href="#providers">提供商</a>
         <a href="#tier-pools">梯队池</a>
+        <a href="#custom-routes">路由</a>
         <a href="#proxy-keys">Key</a>
         <a href="#system-logs">日志</a>
       </nav>
@@ -879,43 +880,55 @@ ${H('管理')}
               <!-- 智能拉取的上游可用模型清单弹窗浮层 -->
               <aside id="amc" class="hd mdl-list-panel"><div class="panel-heading"><div><span class="panel-heading__mark"><i class="fas fa-cube" aria-hidden="true"></i></span><div><h3>可用模型</h3><p>点击“+”添加到配置。</p></div></div><button class="icon-btn" type="button" onclick="hideMdlPanel('amc')" title="关闭可用模型" aria-label="关闭可用模型"><i class="fas fa-times" aria-hidden="true"></i></button></div><div id="amcl"></div></aside>
               <fieldset class="form-group">
-                <div class="fc justify-between mb-2" style="flex-wrap: wrap; gap: 8px;">
+                <!-- 自适应模型列表头部工具栏：支持小屏/移动端整齐换行，绝不溢出卡片 -->
+                <div class="models-header-bar">
                   <legend style="margin-bottom: 0;">模型列表</legend>
-                  <!-- 批量/拉取等极客管理功能栏 -->
-                  <div class="fc" style="gap: 6px;">
-                    <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForAdd()" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键添加拉取的模型</button>
-                    <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForAdd()" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键批量粘贴</button>
-                    <button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForAdd()" title="清空全部模型"><i class="fas fa-trash"></i>一键删除所有模型</button>
+                  <!-- 批量/拉取等管理功能栏：弹性折行布局 -->
+                  <div class="models-toolbar">
+                    <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForAdd()" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>添加拉取模型</button>
+                    <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForAdd()" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>批量粘贴</button>
+                    <button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForAdd()" title="清空全部模型"><i class="fas fa-trash"></i>清空所有模型</button>
                   </div>
                 </div>
-                <!-- 动态模型配置行列表 -->
+                <!-- 动态模型配置行列表（紧凑对齐双行卡片） -->
                 <div id="amodels">
-                  <div class="fc mb-4 field-row">
-                    <input type="text" placeholder="deepseek-chat" class="fx1 ami" aria-label="模型 ID">
-                    <select class="select-sm amcat" style="width: 82px;" title="模型分类">
-                      <option value="auto">自动识别</option>
+                  <div class="model-card-compact field-row">
+                    <!-- 第一行：模型 ID 与操作组（复制、测通、开关、移除） -->
+                    <div class="model-row-header">
+                      <input type="text" placeholder="deepseek-chat" class="fx1 ami" aria-label="模型 ID">
+                      <div class="model-actions">
+                        <button type="button" class="action-icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy" aria-hidden="true"></i></button>
+                        <button type="button" class="action-icon-btn" onclick="testNewMdl(this)" title="测试模型" aria-label="测试模型"><i class="fas fa-plug" aria-hidden="true"></i></button>
+                        <label class="tg tg-mini" title="启用模型"><input type="checkbox" checked class="ame" aria-label="启用模型"><span class="sl"></span></label>
+                        <button type="button" class="action-icon-btn action-icon-btn--danger" onclick="this.closest('.model-card-compact').remove()" title="移除模型" aria-label="移除模型"><i class="fas fa-times" aria-hidden="true"></i></button>
+                      </div>
+                    </div>
+                    <!-- 第二行：模型分类与初始状态 -->
+                    <div class="model-row-badges">
+                      <select class="select-mini amcat" title="模型分类">
+                        <option value="auto">自动</option>
+                        <option value="text">文本</option>
+                        <option value="image">绘图</option>
+                        <option value="multimodal">多模</option>
+                        <option value="other">其他</option>
+                      </select>
+                      <span class="model-mini-badge model-mini-badge--ok" title="新模型待创建"><i class="fas fa-check-circle"></i>待创建</span>
+                    </div>
+                  </div>
+                </div>
+                <!-- 手动添加新模型快捷栏：自适应防截断 -->
+                <div class="add-model-bar">
+                  <input type="text" id="anew-mid" placeholder="新的模型 ID" class="add-model-input">
+                  <div class="add-model-controls">
+                    <select id="anew-mcat" class="add-model-select" title="新模型分类">
+                      <option value="auto">自动分类</option>
                       <option value="text">文本</option>
                       <option value="image">绘图</option>
                       <option value="multimodal">多模态</option>
                       <option value="other">其他</option>
                     </select>
-                    <label class="tg" title="启用模型"><input type="checkbox" checked class="ame" aria-label="启用模型"><span class="sl"></span></label>
-                    <button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy" aria-hidden="true"></i></button>
-                    <button class="icon-btn" onclick="testNewMdl(this)" title="测试模型" aria-label="测试模型"><i class="fas fa-plug"></i></button>
-                    <button class="icon-btn" onclick="this.parentElement.remove()" title="移除模型" aria-label="移除模型"><i class="fas fa-times"></i></button>
+                    <button class="btn btn-s add-model-btn" type="button" onclick="addMdlRow()"><i class="fas fa-plus"></i>添加模型</button>
                   </div>
-                </div>
-                <!-- 手动添加新模型快捷栏 -->
-                <div class="fc mt-1 field-row">
-                  <input type="text" id="anew-mid" placeholder="新的模型 ID" class="fx1">
-                  <select id="anew-mcat" class="select-sm" style="width: 82px;" title="新模型分类">
-                    <option value="auto">自动分类</option>
-                    <option value="text">文本</option>
-                    <option value="image">绘图</option>
-                    <option value="multimodal">多模态</option>
-                    <option value="other">其他</option>
-                  </select>
-                  <button class="btn btn-s" type="button" onclick="addMdlRow()"><i class="fas fa-plus"></i>添加模型</button>
                 </div>
               </fieldset>
             </div>
@@ -938,12 +951,14 @@ ${H('管理')}
               <div class="fg"><label>API 格式</label><select id="at-${escapePageHtml(p.id)}" class="select-sm" onchange="markUnsaved()"><option value="openai" ${(p.apiType||'openai')==='openai'?'selected':''}>OpenAI 兼容</option><option value="anthropic" ${p.apiType==='anthropic'?'selected':''}>Anthropic 兼容</option></select></div>
               <fieldset class="form-group"><legend>上游 API Keys</legend><div id="keys-${escapePageHtml(p.id)}">${p.apiKeys.map((k, ki)=>`<div class="fc mb-3 field-row" data-kidx="${ki}"><input type="text" value="${escapePageHtml(k.key)}" class="fx1" id="k-${escapePageHtml(p.id)}-${ki}" placeholder="API Key" aria-label="API Key" oninput="markUnsaved()"><label class="tg"><input type="checkbox" ${k.enabled?'checked':''} id="ken-${escapePageHtml(p.id)}-${ki}" aria-label="启用 Key" onchange="markUnsaved()"><span class="sl"></span></label><button class="icon-btn" onclick="copyRowVal(this)" title="复制 Key" aria-label="复制 Key"><i class="far fa-copy" aria-hidden="true"></i></button><button class="icon-btn" onclick="testKeyRow('${p.id}',${ki})" title="测试 Key" aria-label="测试 Key"><i class="fas fa-plug" aria-hidden="true"></i></button><button class="icon-btn" onclick="rmKeyRow('${p.id}',${ki})" title="移除 Key" aria-label="移除 Key"><i class="fas fa-times" aria-hidden="true"></i></button></div>`).join('')}</div><div class="fc mt-1 field-row"><input type="text" id="nk-${escapePageHtml(p.id)}" placeholder="新的 API Key" class="fx1"><button class="btn btn-s" onclick="addKeyRow('${p.id}')"><i class="fas fa-plus" aria-hidden="true"></i>添加</button></div></fieldset>
               <fieldset class="form-group">
-                <div class="fc justify-between mb-2" style="flex-wrap: wrap; gap: 8px;">
+                <!-- 自适应模型列表头部工具栏：支持小屏/移动端整齐换行，绝不溢出卡片 -->
+                <div class="models-header-bar">
                   <legend style="margin-bottom: 0;">模型列表 (${p.models.length})</legend>
-                  <div class="fc" style="gap: 6px;">
-                    <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForEdit('${p.id}')" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键添加拉取的模型</button>
-                    <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit('${p.id}')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键批量粘贴</button>
-                    <button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForEdit('${p.id}')" title="清空该提供商下的所有模型"><i class="fas fa-trash"></i>一键删除所有模型</button>
+                  <!-- 批量/拉取等管理功能栏：弹性折行布局 -->
+                  <div class="models-toolbar">
+                    <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForEdit('${p.id}')" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>添加拉取模型</button>
+                    <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit('${p.id}')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>批量粘贴</button>
+                    <button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForEdit('${p.id}')" title="清空该提供商下的所有模型"><i class="fas fa-trash"></i>清空所有模型</button>
                   </div>
                 </div>
                 <div id="ml-${escapePageHtml(p.id)}">${p.models.map((m,mi)=>{
@@ -955,63 +970,67 @@ ${H('管理')}
                   const isCooling = !isDead && (m.status === 'cooling' || (m.cooldownUntil && m.cooldownUntil > Date.now()))
                   
                   // 3. 动态配置健康状态指标徽章的样式与内容
-                  let statusBadge = `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="运行正常"><i class="fas fa-check-circle" style="color: #146c2e;"></i>正常</span>`
+                  let statusBadge = `<span class="model-mini-badge model-mini-badge--ok" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="运行正常"><i class="fas fa-check-circle"></i>正常</span>`
                   if (isDead) {
-                    statusBadge = `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #f8b4b4; background: #fdf2f2; color: #9b1c1c; font-weight: 500;" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="连续失败已熔断"><i class="fas fa-times-circle" style="color: #9b1c1c;"></i>永久失效</span>`
+                    statusBadge = `<span class="model-mini-badge model-mini-badge--dead" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="连续失败已熔断"><i class="fas fa-times-circle"></i>失效</span>`
                   } else if (isCooling) {
-                    statusBadge = `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #fde047; background: #fef9c3; color: #713f12; font-weight: 500;" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="冷却中"><i class="fas fa-snowflake" style="color: #713f12;"></i>冷却中</span>`
+                    statusBadge = `<span class="model-mini-badge model-mini-badge--warn" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="冷却中"><i class="fas fa-snowflake"></i>冷却中</span>`
                   }
 
-                  // 4. 智能匹配在席 OpenClaw 池，若包含则展示推荐徽章，否则展示不合适徽章
+                  // 4. 智能匹配在席 OpenClaw 池，若包含则展示推荐徽章，否则展示普通徽章
                   const isOpenClaw = tierConfig.tier2?.models?.some(tm => tm.providerId === p.id && tm.modelId === m.id)
                   const clawBadge = isOpenClaw 
-                    ? `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #dcd6f7; background: #f3efff; color: #512da8; font-weight: 500;" title="此模型已指派至 OpenClaw 别名池内"><i class="fas fa-robot"></i>OpenClaw 适合</span>`
-                    : `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #64748b; font-weight: 500;" title="此模型未进入 OpenClaw 别名池"><i class="fas fa-ban"></i>OpenClaw 不适合</span>`
+                    ? `<span class="model-mini-badge model-mini-badge--claw" title="此模型已指派至 OpenClaw 别名池内"><i class="fas fa-robot"></i>OpenClaw</span>`
+                    : `<span class="model-mini-badge model-mini-badge--muted" title="此模型未进入 OpenClaw 别名池"><i class="fas fa-cube"></i>普通</span>`
 
                   // 5. 拉取并展示当前模型最近的自动海选或真实用户双延迟数据
                   const key = `${p.id}:${m.id}`
                   const stats = latenciesMap[key] || { probeLatency: null, realLatency: null }
                   const val = stats.realLatency || stats.probeLatency
                   const latencyBadge = val 
-                    ? `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" title="最新一次探测或实测加权平均延迟：${val}ms"><i class="fas fa-tachometer-alt"></i>${val} ms</span>`
-                    : `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #94a3b8; font-weight: 500;" title="该模型目前暂无成功调用的延迟数据"><i class="fas fa-tachometer-alt"></i>暂无 ms</span>`
+                    ? `<span class="model-mini-badge model-mini-badge--ok" title="实测或探测平均延迟：${val}ms"><i class="fas fa-tachometer-alt"></i>${val}ms</span>`
+                    : `<span class="model-mini-badge model-mini-badge--muted" title="该模型暂无测速数据"><i class="fas fa-tachometer-alt"></i>未测</span>`
 
-                  // 6. 返回全新的精致卡片结构，底层 ID 和类名均完全保持兼容，绝不冲突原有保存逻辑
-                  return `<div class="fc mb-4 field-row model-card" data-idx="${mi}" style="display: flex; flex-direction: column; gap: 12px; background: var(--color-paper, #ffffff); border: 1px solid var(--color-rule-2, #e2e8f0); border-radius: 12px; padding: 14px 16px; align-items: stretch; width: 100%; box-sizing: border-box;">
-                    <!-- 第一行：模型名称、复制、状态开关与单项删除 -->
-                    <div class="model-row-header" style="display: flex; align-items: center; gap: 8px; width: 100%;">
-                      <input type="text" value="${escapePageHtml(m.id)}" class="fx1 ami" id="mid-${escapePageHtml(p.id)}-${mi}" placeholder="模型 ID" oninput="markUnsaved()" style="height: 38px; padding-inline: 12px; border-radius: 8px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper-2, #f8fafc); font-family: var(--font-mono); font-size: 14px;">
-                      <button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="far fa-copy" aria-hidden="true"></i></button>
-                      <label class="tg" title="启用模型" style="margin: 0; flex-shrink: 0;"><input type="checkbox" ${m.enabled?'checked':''} id="men-${escapePageHtml(p.id)}-${mi}" aria-label="启用模型" onchange="markUnsaved()"><span class="sl"></span></label>
-                      <button class="icon-btn" onclick="rmMdl('${p.id}',${mi})" title="移除模型" aria-label="移除模型" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="fas fa-times" aria-hidden="true"></i></button>
+                  // 6. 返回紧凑双行卡片结构，底层 ID 和类名均完全保持兼容，绝不冲突原有保存逻辑
+                  return `<div class="model-card-compact field-row" data-idx="${mi}" id="mcard-${escapePageHtml(p.id)}-${mi}">
+                    <!-- 第一行：模型 ID（自适应拉伸）与右侧核心操作组（复制、测通、开关、移除） -->
+                    <div class="model-row-header">
+                      <input type="text" value="${escapePageHtml(m.id)}" class="fx1 ami" id="mid-${escapePageHtml(p.id)}-${mi}" placeholder="模型 ID" oninput="markUnsaved()">
+                      <div class="model-actions">
+                        <button type="button" class="action-icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy" aria-hidden="true"></i></button>
+                        <button type="button" class="action-icon-btn" id="tm-${escapePageHtml(p.id)}-${mi}" onclick="testMdl('${p.id}','${escapePageHtml(m.id)}',${mi})" title="测试模型可用性" aria-label="测试此模型"><i class="fas fa-plug" aria-hidden="true"></i></button>
+                        <label class="tg tg-mini" title="启用/禁用模型"><input type="checkbox" ${m.enabled?'checked':''} id="men-${escapePageHtml(p.id)}-${mi}" class="ame" aria-label="启用模型" onchange="markUnsaved()"><span class="sl"></span></label>
+                        <button type="button" class="action-icon-btn action-icon-btn--danger" id="rm-${escapePageHtml(p.id)}-${mi}" onclick="rmMdl('${p.id}',${mi})" title="移除模型" aria-label="移除模型"><i class="fas fa-times" aria-hidden="true"></i></button>
+                      </div>
                     </div>
-                    <!-- 第二行：类型下拉选择、健康及测速测通仪表胶囊徽章 -->
-                    <div class="model-row-badges" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%;">
-                      <select class="select-sm amcat" id="mcat-${escapePageHtml(p.id)}-${mi}" onchange="changeModelCategory('${p.id}','${m.id}',this.value,${mi})" style="width: 86px; height: 30px; font-size: 12px; border-radius: 6px; padding: 0 6px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper, #fff); margin: 0; outline: none;" title="模型分类（手动优先）">
+                    <!-- 第二行：类型下拉选择、健康及测速测通胶囊徽章 -->
+                    <div class="model-row-badges">
+                      <select class="select-mini amcat" id="mcat-${escapePageHtml(p.id)}-${mi}" onchange="changeModelCategory('${p.id}','${escapePageHtml(m.id)}',this.value,${mi})" title="模型分类（手动优先）">
                         <option value="text" ${cat==='text'?'selected':''}>文本</option>
                         <option value="image" ${cat==='image'?'selected':''}>绘图</option>
-                        <option value="multimodal" ${cat==='multimodal'?'selected':''}>多模态</option>
+                        <option value="multimodal" ${cat==='multimodal'?'selected':''}>多模</option>
                         <option value="other" ${cat==='other'?'selected':''}>其他</option>
                       </select>
                       ${statusBadge}
-                      <button class="btn btn-s btn-sm" id="munblock-${escapePageHtml(p.id)}-${mi}" style="${isDead?'':'display:none;'}" onclick="unblockModel('${p.id}','${m.id}',${mi})" title="解封此模型，清零失败计数器并恢复正常"><i class="fas fa-unlock"></i>解封</button>
+                      <button class="btn btn-s btn-sm" id="munblock-${escapePageHtml(p.id)}-${mi}" style="${isDead?'':'display:none;'} height: 20px; padding: 0 5px; font-size: 10.5px;" onclick="unblockModel('${p.id}','${escapePageHtml(m.id)}',${mi})" title="解封此模型，清零失败计数器并恢复正常"><i class="fas fa-unlock"></i>解封</button>
                       ${clawBadge}
                       ${latencyBadge}
-                      <!-- 仪表盘一键单测按钮 -->
-                      <button class="icon-btn" onclick="testMdl('${p.id}','${m.id}',${mi})" title="对该模型进行即时连接测试与可用性诊断" aria-label="测试此模型" style="margin: 0; padding: 4px 8px; font-size: 12px; height: 28px; border: 1px solid var(--color-rule-2); background: var(--color-paper-2); border-radius: 6px; color: var(--color-muted); display: inline-flex; align-items: center; gap: 4px;"><i class="fas fa-tachometer-alt" aria-hidden="true"></i></button>
                     </div>
                   </div>`
                 }).join('')}</div>
-                <div class="fc mt-1 field-row">
-                  <input type="text" id="nmid-${escapePageHtml(p.id)}" placeholder="新的模型 ID" class="fx1">
-                  <select id="nmcat-${escapePageHtml(p.id)}" class="select-sm" style="width: 82px;" title="新模型分类">
-                    <option value="auto">自动分类</option>
-                    <option value="text">文本</option>
-                    <option value="image">绘图</option>
-                    <option value="multimodal">多模态</option>
-                    <option value="other">其他</option>
-                  </select>
-                  <button class="btn btn-s" onclick="addMdl('${p.id}')"><i class="fas fa-plus" aria-hidden="true"></i>添加</button>
+                <!-- 手动添加新模型快捷栏：自适应防截断 -->
+                <div class="add-model-bar">
+                  <input type="text" id="nmid-${escapePageHtml(p.id)}" placeholder="新的模型 ID" class="add-model-input">
+                  <div class="add-model-controls">
+                    <select id="nmcat-${escapePageHtml(p.id)}" class="add-model-select" title="新模型分类">
+                      <option value="auto">自动分类</option>
+                      <option value="text">文本</option>
+                      <option value="image">绘图</option>
+                      <option value="multimodal">多模态</option>
+                      <option value="other">其他</option>
+                    </select>
+                    <button class="btn btn-s add-model-btn" onclick="addMdl('${p.id}')"><i class="fas fa-plus" aria-hidden="true"></i>添加模型</button>
+                  </div>
                 </div>
               </fieldset>
               <div class="detail-actions"><div id="tr-${escapePageHtml(p.id)}" aria-live="polite"></div><div>${p.id === 'opencode' ? '<button class="btn btn-s" onclick="fetchEditModels(\'' + p.id + '\')"><i class="fas fa-download" aria-hidden="true"></i>获取模型</button>' : ''}<button class="btn btn-d" onclick="del('${p.id}')"><i class="fas fa-trash" aria-hidden="true"></i>删除</button><button class="btn btn-p" onclick="stageProvChanges('${p.id}')"><i class="fas fa-check" aria-hidden="true"></i>暂存修改</button></div></div>
@@ -1176,9 +1195,10 @@ function copyText(t, el) {
   })
 }
 
-// 从当前行读取实时输入值并复制（Key 行与模型 ID 行共用）
+// 从当前行读取实时输入值并复制（Key 行与模型 ID 行共用，自适应支持紧凑卡片容器）
 function copyRowVal(btn) {
-  const inp = btn.parentElement.querySelector('input[type=text]')
+  const card = btn.closest('.model-card-compact, .field-row, .fc') || btn.parentElement
+  const inp = card ? card.querySelector('input[type=text]') : null
   if (inp) copyText(inp.value, btn)
 }
 
@@ -1550,8 +1570,7 @@ function detectModelCategory(mid) {
   return 'text'
 }
 
-// 向添加表单容器加入单条模型输入行
-// 向添加表单容器加入单条模型输入行（精美双行卡片化改造，与图片外观相契合，底层完全向下兼容）
+// 向添加表单容器加入单条模型输入行（两行紧凑规整排版，底层完全向下兼容）
 function addModelRowToContainer(containerId, mid, category, enabled) {
   var c = document.getElementById(containerId)
   if (!c) return false
@@ -1561,7 +1580,7 @@ function addModelRowToContainer(containerId, mid, category, enabled) {
 
   // 1. 获取对应的 Provider ID (用于动态检测 OpenClaw 在席状态与延迟)
   var provId = containerId.startsWith('ml-') ? containerId.substring(3) : (document.getElementById('aid')?.value.trim() || '')
-  var mi = c.querySelectorAll('.field-row').length
+  var mi = c.querySelectorAll('.model-card-compact, .field-row').length
 
   var cat = (category && category !== 'auto') ? category : detectModelCategory(mid)
 
@@ -1585,55 +1604,53 @@ function addModelRowToContainer(containerId, mid, category, enabled) {
 
   // 4. 生成 OpenClaw 的胶囊标签 HTML
   var clawBadge = isOpenClaw 
-    ? '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #dcd6f7; background: #f3efff; color: #512da8; font-weight: 500;" title="在席 OpenClaw 池"><i class="fas fa-robot"></i>OpenClaw 适合</span>'
-    : '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #64748b; font-weight: 500;" title="未入席 OpenClaw 池"><i class="fas fa-ban"></i>OpenClaw 不适合</span>'
+    ? '<span class="model-mini-badge model-mini-badge--claw" title="在席 OpenClaw 池"><i class="fas fa-robot"></i>OpenClaw</span>'
+    : '<span class="model-mini-badge model-mini-badge--muted" title="未入席 OpenClaw 池"><i class="fas fa-cube"></i>普通</span>'
 
-  // 5. 组装延迟信息以及对应的测速按钮
-  var latencyAndTestHtml = ''
-  if (latencyVal) {
-    latencyAndTestHtml = '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" title="最近测速延迟"><i class="fas fa-tachometer-alt"></i>' + latencyVal + ' ms</span>'
-  } else {
-    latencyAndTestHtml = '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #94a3b8; font-weight: 500;" title="无最近测速数据"><i class="fas fa-tachometer-alt"></i>暂无 ms</span>'
-  }
+  // 5. 组装延迟信息标签
+  var latencyBadge = latencyVal 
+    ? '<span class="model-mini-badge model-mini-badge--ok" title="实测或探测平均延迟：' + latencyVal + 'ms"><i class="fas fa-tachometer-alt"></i>' + latencyVal + 'ms</span>'
+    : '<span class="model-mini-badge model-mini-badge--muted" title="该模型暂无测速数据"><i class="fas fa-tachometer-alt"></i>未测</span>'
 
-  // 根据当前是在创建页面还是编辑页面，绑定正确的测速触发函数
-  if (containerId.startsWith('ml-')) {
-    latencyAndTestHtml += '<button type="button" class="icon-btn" onclick="testMdl(\\\'' + provId + '\\\',\\\'' + mid + '\\\',' + mi + ')" title="测试此模型" style="margin: 0; padding: 4px 8px; font-size: 12px; height: 28px; border: 1px solid var(--color-rule-2); background: var(--color-paper-2); border-radius: 6px; color: var(--color-muted); display: inline-flex; align-items: center; gap: 4px;"><i class="fas fa-tachometer-alt" aria-hidden="true"></i></button>'
-  } else {
-    latencyAndTestHtml += '<button type="button" class="icon-btn" onclick="testNewMdl(this)" title="测试此模型" style="margin: 0; padding: 4px 8px; font-size: 12px; height: 28px; border: 1px solid var(--color-rule-2); background: var(--color-paper-2); border-radius: 6px; color: var(--color-muted); display: inline-flex; align-items: center; gap: 4px;"><i class="fas fa-tachometer-alt" aria-hidden="true"></i></button>'
-  }
+  // 区分测通触发方式
+  var testBtnHtml = containerId.startsWith('ml-')
+    ? '<button type="button" class="action-icon-btn" id="tm-' + provId + '-' + mi + '" onclick="testMdl(\\\'' + provId + '\\\',\\\'' + mid + '\\\',' + mi + ')" title="测试此模型可用性" aria-label="测试此模型"><i class="fas fa-plug" aria-hidden="true"></i></button>'
+    : '<button type="button" class="action-icon-btn" onclick="testNewMdl(this)" title="测试此模型" aria-label="测试模型"><i class="fas fa-plug" aria-hidden="true"></i></button>'
 
   // 绑定删除卡片的事件（编辑模式调用 rmMdl 方法通知更新，新增模式直接移除节点）
   var removeActionHtml = containerId.startsWith('ml-') 
     ? 'rmMdl(\\\'' + provId + '\\\',' + mi + ')'
-    : 'this.closest(\\\'.field-row\\\').remove()'
+    : 'this.closest(\\\'.model-card-compact\\\').remove()'
 
   var d = document.createElement('div')
-  d.className = 'fc mb-4 field-row model-card'
+  d.className = 'model-card-compact field-row'
   d.dataset.idx = mi
-  d.style.cssText = 'display: flex; flex-direction: column; gap: 12px; background: var(--color-paper, #ffffff); border: 1px solid var(--color-rule-2, #e2e8f0); border-radius: 12px; padding: 14px 16px; align-items: stretch; width: 100%; box-sizing: border-box;'
+  d.id = 'mcard-' + provId + '-' + mi
   
   d.innerHTML = 
-    '<!-- 第一行：模型 ID、一键复制、蓝绿开关、删除 -->' +
-    '<div class="model-row-header" style="display: flex; align-items: center; gap: 8px; width: 100%;">' +
-      '<input type="text" value="' + escapeHtml(mid) + '" class="fx1 ami" id="mid-' + provId + '-' + mi + '" placeholder="模型 ID" oninput="markUnsaved()" style="height: 38px; padding-inline: 12px; border-radius: 8px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper-2, #f8fafc); font-family: var(--font-mono); font-size: 14px;">' +
-      '<button type="button" class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="far fa-copy" aria-hidden="true"></i></button>' +
-      '<label class="tg" title="启用模型" style="margin: 0; flex-shrink: 0;"><input type="checkbox" ' + (enabled !== false ? 'checked' : '') + ' id="men-' + provId + '-' + mi + '" class="ame" onchange="markUnsaved()"><span class="sl"></span></label>' +
-      '<button type="button" class="icon-btn" onclick="' + removeActionHtml + '" title="移除模型" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="fas fa-times" aria-hidden="true"></i></button>' +
+    '<!-- 第一行：模型 ID（自适应满宽）与操作组（复制、测通、开关、移除） -->' +
+    '<div class="model-row-header">' +
+      '<input type="text" value="' + escapeHtml(mid) + '" class="fx1 ami" id="mid-' + provId + '-' + mi + '" placeholder="模型 ID" oninput="markUnsaved()">' +
+      '<div class="model-actions">' +
+        '<button type="button" class="action-icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy" aria-hidden="true"></i></button>' +
+        testBtnHtml +
+        '<label class="tg tg-mini" title="启用/禁用模型"><input type="checkbox" ' + (enabled !== false ? 'checked' : '') + ' id="men-' + provId + '-' + mi + '" class="ame" aria-label="启用模型" onchange="markUnsaved()"><span class="sl"></span></label>' +
+        '<button type="button" class="action-icon-btn action-icon-btn--danger" onclick="' + removeActionHtml + '" title="移除模型" aria-label="移除模型"><i class="fas fa-times" aria-hidden="true"></i></button>' +
+      '</div>' +
     '</div>' +
-    '<!-- 第二行：分类选项、健康状况胶囊、OpenClaw兼容胶囊、实时测速与一键测通 -->' +
-    '<div class="model-row-badges" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%;">' +
-      '<select class="select-sm amcat" id="mcat-' + provId + '-' + mi + '" onchange="changeModelCategory(\\\'' + provId + '\\\',\\\'' + mid + '\\\',this.value,' + mi + ')" style="width: 86px; height: 30px; font-size: 12px; border-radius: 6px; padding: 0 6px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper, #fff); margin: 0; outline: none;" title="模型分类">' +
+    '<!-- 第二行：分类选项、健康状况胶囊、OpenClaw兼容胶囊、实时测速 -->' +
+    '<div class="model-row-badges">' +
+      '<select class="select-mini amcat" id="mcat-' + provId + '-' + mi + '" onchange="changeModelCategory(\\\'' + provId + '\\\',\\\'' + mid + '\\\',this.value,' + mi + ')" title="模型分类">' +
         '<option value="auto">自动识别</option>' +
         '<option value="text" ' + (cat === 'text' ? 'selected' : '') + '>文本</option>' +
         '<option value="image" ' + (cat === 'image' ? 'selected' : '') + '>绘图</option>' +
         '<option value="multimodal" ' + (cat === 'multimodal' ? 'selected' : '') + '>多模态</option>' +
         '<option value="other" ' + (cat === 'other' ? 'selected' : '') + '>其他</option>' +
       '</select>' +
-      '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" id="mstatus-' + provId + '-' + mi + '" title="运行正常"><i class="fas fa-check-circle" style="color: #146c2e;"></i>正常</span>' +
-      '<button type="button" class="btn btn-s btn-sm" id="munblock-' + provId + '-' + mi + '" style="display:none;" onclick="unblockModel(\\\'' + provId + '\\\',\\\'' + mid + '\\\',' + mi + ')" title="解封此模型"><i class="fas fa-unlock"></i>解封</button>' +
+      '<span class="model-mini-badge model-mini-badge--ok" id="mstatus-' + provId + '-' + mi + '" title="运行正常"><i class="fas fa-check-circle"></i>正常</span>' +
+      '<button type="button" class="btn btn-s btn-sm" id="munblock-' + provId + '-' + mi + '" style="display:none; height: 22px; padding: 0 6px; font-size: 11px;" onclick="unblockModel(\\\'' + provId + '\\\',\\\'' + mid + '\\\',' + mi + ')" title="解封此模型"><i class="fas fa-unlock"></i>解封</button>' +
       clawBadge +
-      latencyAndTestHtml +
+      latencyBadge +
     '</div>'
 
   c.appendChild(d)
@@ -1722,7 +1739,9 @@ async function clearAllModelsForAdd() {
 }
 
 function testNewMdl(btn) {
-  const inp = btn.parentElement.querySelector('.ami'), mid = inp.value.trim()
+  const card = btn.closest('.model-card-compact, .field-row, .fc') || btn.parentElement
+  const inp = card ? card.querySelector('.ami') : null
+  const mid = inp ? inp.value.trim() : ''
   if (!mid) { toast('请输入模型 ID', 'error'); return }
   const url = document.getElementById('aurl').value.trim()
     const akeys = document.querySelectorAll('#akeys .aki')
@@ -1779,11 +1798,11 @@ function renderProviderCard(p) {
       var isCooling = !isDead && (m.status === 'cooling' || (m.cooldownUntil && m.cooldownUntil > Date.now()))
       
       // 2. 拼接健康状态指标徽章
-      var badge = '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" id="mstatus-' + p.id + '-' + mi + '" title="运行正常"><i class="fas fa-check-circle" style="color: #146c2e;"></i>正常</span>'
+      var badge = '<span class="model-mini-badge model-mini-badge--ok" id="mstatus-' + p.id + '-' + mi + '" title="运行正常"><i class="fas fa-check-circle"></i>正常</span>'
       if (isDead) {
-        badge = '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #f8b4b4; background: #fdf2f2; color: #9b1c1c; font-weight: 500;" id="mstatus-' + p.id + '-' + mi + '" title="连续失败已熔断"><i class="fas fa-times-circle" style="color: #9b1c1c;"></i>永久失效</span>'
+        badge = '<span class="model-mini-badge model-mini-badge--dead" id="mstatus-' + p.id + '-' + mi + '" title="连续失败已熔断"><i class="fas fa-times-circle"></i>失效</span>'
       } else if (isCooling) {
-        badge = '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #fde047; background: #fef9c3; color: #713f12; font-weight: 500;" id="mstatus-' + p.id + '-' + mi + '" title="冷却中"><i class="fas fa-snowflake" style="color: #713f12;"></i>冷却中</span>'
+        badge = '<span class="model-mini-badge model-mini-badge--warn" id="mstatus-' + p.id + '-' + mi + '" title="冷却中"><i class="fas fa-snowflake"></i>冷却中</span>'
       }
 
       // 3. 动态检测并判定模型是否在 OpenClaw 适合池内
@@ -1794,8 +1813,8 @@ function renderProviderCard(p) {
         })
       }
       var clawBadge = isOpenClaw 
-        ? '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #dcd6f7; background: #f3efff; color: #512da8; font-weight: 500;" title="此模型已指派至 OpenClaw 别名池内"><i class="fas fa-robot"></i>OpenClaw 适合</span>'
-        : '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #64748b; font-weight: 500;" title="此模型未进入 OpenClaw 别名池"><i class="fas fa-ban"></i>OpenClaw 不适合</span>'
+        ? '<span class="model-mini-badge model-mini-badge--claw" title="此模型已指派至 OpenClaw 别名池内"><i class="fas fa-robot"></i>OpenClaw</span>'
+        : '<span class="model-mini-badge model-mini-badge--muted" title="此模型未进入 OpenClaw 别名池"><i class="fas fa-cube"></i>普通</span>'
 
       // 4. 读取实时延迟探测信息
       var latencyVal = null
@@ -1807,43 +1826,34 @@ function renderProviderCard(p) {
         }
       }
       var latencyBadge = latencyVal 
-        ? '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" title="最新测速延迟"><i class="fas fa-tachometer-alt"></i>' + latencyVal + ' ms</span>'
-        : '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #94a3b8; font-weight: 500;" title="暂无可用测速延迟数据"><i class="fas fa-tachometer-alt"></i>暂无 ms</span>'
+        ? '<span class="model-mini-badge model-mini-badge--ok" title="实测或探测平均延迟：' + latencyVal + 'ms"><i class="fas fa-tachometer-alt"></i>' + latencyVal + 'ms</span>'
+        : '<span class="model-mini-badge model-mini-badge--muted" title="该模型暂无测速数据"><i class="fas fa-tachometer-alt"></i>未测</span>'
 
-      // 5. 拼装返回精致的双行模型卡片 HTML 结构，完美兼容旧的数据采集逻辑
-      // 中文注释：为了彻底杜绝复杂的引号嵌套和转义错误，这里我们改用纯净的客户端 ES6 模板字符串来进行 HTML 结构的输出，保证代码绝对稳定易读。
+      // 5. 拼装返回精致的两行紧凑模型卡片 HTML 结构，完美兼容旧的数据采集逻辑
       return \`
-<div class="fc mb-4 field-row model-card" data-idx="\${mi}" style="display: flex; flex-direction: column; gap: 12px; background: var(--color-paper, #ffffff); border: 1px solid var(--color-rule-2, #e2e8f0); border-radius: 12px; padding: 14px 16px; align-items: stretch; width: 100%; box-sizing: border-box;">
-  <!-- 第一行：输入、复制、启用开关、单项移除 -->
-  <div class="model-row-header" style="display: flex; align-items: center; gap: 8px; width: 100%;">
-    <!-- 模型ID输入框 -->
-    <input type="text" value="\${escapeHtml(m.id)}" class="fx1 ami" id="mid-\${p.id}-\${mi}" placeholder="模型 ID" oninput="markUnsaved()" style="height: 38px; padding-inline: 12px; border-radius: 8px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper-2, #f8fafc); font-family: var(--font-mono); font-size: 14px;">
-    <!-- 一键复制模型ID按钮 -->
-    <button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="far fa-copy" aria-hidden="true"></i></button>
-    <!-- 模型启用/禁用蓝绿开关 -->
-    <label class="tg" title="启用模型" style="margin: 0; flex-shrink: 0;"><input type="checkbox" \${m.enabled?'checked':''} id="men-\${p.id}-\${mi}" onchange="markUnsaved()"><span class="sl"></span></label>
-    <!-- 移除模型卡片按钮 -->
-    <button class="icon-btn" onclick="rmMdl('\${p.id}',\${mi})" title="移除模型" aria-label="移除模型" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="fas fa-times" aria-hidden="true"></i></button>
+<div class="model-card-compact field-row" data-idx="\${mi}" id="mcard-\${p.id}-\${mi}">
+  <!-- 第一行：模型 ID（自适应拉伸）与右侧核心操作群组（复制、测通、开关、移除） -->
+  <div class="model-row-header">
+    <input type="text" value="\${escapeHtml(m.id)}" class="fx1 ami" id="mid-\${p.id}-\${mi}" placeholder="模型 ID" oninput="markUnsaved()">
+    <div class="model-actions">
+      <button type="button" class="action-icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy" aria-hidden="true"></i></button>
+      <button type="button" class="action-icon-btn" id="tm-\${p.id}-\${mi}" onclick="testMdl('\${p.id}','\${escapeHtml(m.id)}',\${mi})" title="测试此模型可用性" aria-label="测试此模型"><i class="fas fa-plug" aria-hidden="true"></i></button>
+      <label class="tg tg-mini" title="启用/禁用模型"><input type="checkbox" \${m.enabled?'checked':''} id="men-\${p.id}-\${mi}" class="ame" aria-label="启用模型" onchange="markUnsaved()"><span class="sl"></span></label>
+      <button type="button" class="action-icon-btn action-icon-btn--danger" id="rm-\${p.id}-\${mi}" onclick="rmMdl('\${p.id}',\${mi})" title="移除模型" aria-label="移除模型"><i class="fas fa-times" aria-hidden="true"></i></button>
+    </div>
   </div>
-  <!-- 第二行：类型下拉、健康度、OpenClaw兼容判定、延迟状态与仪表盘诊断测试 -->
-  <div class="model-row-badges" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%;">
-    <!-- 类别下拉选择框 -->
-    <select class="select-sm" id="mcat-\${p.id}-\${mi}" onchange="changeModelCategory('\${p.id}','\${m.id}',this.value,\${mi})" style="width: 86px; height: 30px; font-size: 12px; border-radius: 6px; padding: 0 6px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper, #fff); margin: 0; outline: none;" title="模型分类（手动优先）">
+  <!-- 第二行：类型下拉选择、健康及测速测通胶囊徽章 -->
+  <div class="model-row-badges">
+    <select class="select-mini amcat" id="mcat-\${p.id}-\${mi}" onchange="changeModelCategory('\${p.id}','\${m.id}',this.value,\${mi})" title="模型分类（手动优先）">
       <option value="text" \${cat==='text'?'selected':''}>文本</option>
       <option value="image" \${cat==='image'?'selected':''}>绘图</option>
       <option value="multimodal" \${cat==='multimodal'?'selected':''}>多模态</option>
       <option value="other" \${cat==='other'?'selected':''}>其他</option>
     </select>
-    <!-- 运行状况指标状态徽章 -->
     \${badge}
-    <!-- 解封已熔断冷却状态的按钮 -->
-    <button class="btn btn-s btn-sm" id="munblock-\${p.id}-\${mi}" style="\${isDead?'':'display:none;'}" onclick="unblockModel('\${p.id}','\${m.id}',\${mi})" title="解封此模型，清零失败计数器并恢复正常"><i class="fas fa-unlock"></i>解封</button>
-    <!-- OpenClaw 池席位兼容度指示胶囊 -->
+    <button class="btn btn-s btn-sm" id="munblock-\${p.id}-\${mi}" style="\${isDead?'':'display:none;'} height: 22px; padding: 0 6px; font-size: 11px;" onclick="unblockModel('\${p.id}','\${escapeHtml(m.id)}',\${mi})" title="解封此模型，清零失败计数器并恢复正常"><i class="fas fa-unlock"></i>解封</button>
     \${clawBadge}
-    <!-- 延迟表现测速指标胶囊 -->
     \${latencyBadge}
-    <!-- 一键单测可用性测试按钮 -->
-    <button class="icon-btn" onclick="testMdl('\${p.id}','\${m.id}',\${mi})" title="测试此模型" aria-label="测试此模型" style="margin: 0; padding: 4px 8px; font-size: 12px; height: 28px; border: 1px solid var(--color-rule-2); background: var(--color-paper-2); border-radius: 6px; color: var(--color-muted); display: inline-flex; align-items: center; gap: 4px;"><i class="fas fa-tachometer-alt" aria-hidden="true"></i></button>
   </div>
 </div>\`
     }).join('') +
@@ -2047,23 +2057,32 @@ function addMdlToProvider(providerId, mid, category) {
   var cnt = c.querySelectorAll('[data-idx]').length
   var cat = (category && category !== 'auto') ? category : detectModelCategory(mid)
   var d = document.createElement('div')
-  d.className = 'fc mb-3 field-row'
+  d.className = 'model-card-compact field-row'
   d.dataset.idx = cnt
-  // 中文注释：为了彻底杜绝复杂的引号嵌套和转义错误，这里我们改用纯净的客户端 ES6 模板字符串来进行 HTML 结构的输出，保证代码绝对稳定易读。
+  d.id = 'mcard-' + providerId + '-' + cnt
+  // 中文注释：输出精致的两行紧凑卡片，第一行模型ID与右侧操作组，第二行分类与徽章
   d.innerHTML = \`
-<input type="text" value="\${escapeHtml(mid)}" class="fx1" id="mid-\${escapeHtml(providerId)}-\${cnt}" placeholder="模型 ID" oninput="markUnsaved()">
-<select class="select-sm" id="mcat-\${escapeHtml(providerId)}-\${cnt}" onchange="changeModelCategory('\${escapeHtml(providerId)}','\${escapeHtml(mid)}',this.value,\${cnt})" style="width: 82px;" title="模型分类（手动优先）">
-  <option value="text" \${cat === 'text' ? 'selected' : ''}>文本</option>
-  <option value="image" \${cat === 'image' ? 'selected' : ''}>绘图</option>
-  <option value="multimodal" \${cat === 'multimodal' ? 'selected' : ''}>多模态</option>
-  <option value="other" \${cat === 'other' ? 'selected' : ''}>其他</option>
-</select>
-<span class="status-chip status-chip--ok" id="mstatus-\${escapeHtml(providerId)}-\${cnt}" title="运行正常">正常</span>
-<button class="btn btn-s btn-sm" id="munblock-\${escapeHtml(providerId)}-\${cnt}" style="display:none;" onclick="unblockModel('\${escapeHtml(providerId)}','\${escapeHtml(mid)}',\${cnt})" title="解封此模型"><i class="fas fa-unlock"></i>解封</button>
-<label class="tg"><input type="checkbox" checked id="men-\${escapeHtml(providerId)}-\${cnt}" onchange="markUnsaved()"><span class="sl"></span></label>
-<button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy"></i></button>
-<button class="icon-btn" id="tm-\${escapeHtml(providerId)}-\${cnt}" title="测试模型" aria-label="测试模型"><i class="fas fa-plug"></i></button>
-<button class="icon-btn" id="rm-\${escapeHtml(providerId)}-\${cnt}" title="移除模型" aria-label="移除模型"><i class="fas fa-times"></i></button>\`
+<div class="model-row-header">
+  <input type="text" value="\${escapeHtml(mid)}" class="fx1 ami" id="mid-\${escapeHtml(providerId)}-\${cnt}" placeholder="模型 ID" oninput="markUnsaved()">
+  <div class="model-actions">
+    <button type="button" class="action-icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy" aria-hidden="true"></i></button>
+    <button type="button" class="action-icon-btn" id="tm-\${escapeHtml(providerId)}-\${cnt}" title="测试模型" aria-label="测试此模型"><i class="fas fa-plug" aria-hidden="true"></i></button>
+    <label class="tg tg-mini" title="启用/禁用模型"><input type="checkbox" checked id="men-\${escapeHtml(providerId)}-\${cnt}" class="ame" aria-label="启用模型" onchange="markUnsaved()"><span class="sl"></span></label>
+    <button type="button" class="action-icon-btn action-icon-btn--danger" id="rm-\${escapeHtml(providerId)}-\${cnt}" title="移除模型" aria-label="移除模型"><i class="fas fa-times" aria-hidden="true"></i></button>
+  </div>
+</div>
+<div class="model-row-badges">
+  <select class="select-mini amcat" id="mcat-\${escapeHtml(providerId)}-\${cnt}" onchange="changeModelCategory('\${escapeHtml(providerId)}','\${escapeHtml(mid)}',this.value,\${cnt})" title="模型分类（手动优先）">
+    <option value="text" \${cat === 'text' ? 'selected' : ''}>文本</option>
+    <option value="image" \${cat === 'image' ? 'selected' : ''}>绘图</option>
+    <option value="multimodal" \${cat === 'multimodal' ? 'selected' : ''}>多模态</option>
+    <option value="other" \${cat === 'other' ? 'selected' : ''}>其他</option>
+  </select>
+  <span class="model-mini-badge model-mini-badge--ok" id="mstatus-\${escapeHtml(providerId)}-\${cnt}" title="运行正常"><i class="fas fa-check-circle"></i>正常</span>
+  <button type="button" class="btn btn-s btn-sm" id="munblock-\${escapeHtml(providerId)}-\${cnt}" style="display:none; height: 22px; padding: 0 6px; font-size: 11px;" onclick="unblockModel('\${escapeHtml(providerId)}','\${escapeHtml(mid)}',\${cnt})" title="解封此模型"><i class="fas fa-unlock"></i>解封</button>
+  <span class="model-mini-badge model-mini-badge--muted" title="未进入 OpenClaw 别名池"><i class="fas fa-cube"></i>普通</span>
+  <span class="model-mini-badge model-mini-badge--muted" title="该模型暂无测速数据"><i class="fas fa-tachometer-alt"></i>未测</span>
+</div>\`
   c.appendChild(d)
 
   document.getElementById('tm-' + providerId + '-' + cnt).addEventListener('click', function() { testMdl(providerId, mid, cnt) })
@@ -2113,8 +2132,8 @@ function unblockModel(providerId, modelId, modelIdx) {
   // 更新前端界面上的状态标签和解封按钮
   var badge = document.getElementById('mstatus-' + providerId + '-' + modelIdx)
   if (badge) {
-    badge.className = 'status-chip status-chip--ok'
-    badge.innerText = '正常'
+    badge.className = 'model-mini-badge model-mini-badge--ok'
+    badge.innerHTML = '<i class="fas fa-check-circle"></i>正常'
     badge.title = '运行正常'
   }
   var unblockBtn = document.getElementById('munblock-' + providerId + '-' + modelIdx)
@@ -2145,9 +2164,9 @@ function resetCoolingModels() {
     return
   }
   // 刷新前端所有冷却中的状态徽章
-  document.querySelectorAll('.status-chip--warn').forEach(function(chip) {
-    chip.className = 'status-chip status-chip--ok'
-    chip.innerText = '正常'
+  document.querySelectorAll('.model-mini-badge--warn, .status-chip--warn').forEach(function(chip) {
+    chip.className = 'model-mini-badge model-mini-badge--ok'
+    chip.innerHTML = '<i class="fas fa-check-circle"></i>正常'
     chip.title = '运行正常'
   })
   markUnsaved()
@@ -2566,10 +2585,10 @@ function renderCustomRoutes() {
     var isTier3 = rule.target === 'drawing/auto'
 
     return '<article class="ki" style="display: flex; flex-direction: column; gap: 10px;" data-id="' + escapeHtml(rule.id) + '">' +
-      // 输入与别名行（美化手动输入框，保留自由配置能力）
-      '<div class="fr" style="gap: 10px; align-items: flex-start; width: 100%;">' +
+      // 输入与别名行（使用自适应类 route-inputs-row：手机端单列纵向铺满，桌面端三列横排）
+      '<div class="route-inputs-row">' +
         // 别名配置
-        '<div class="fg" style="margin: 0; flex: 1;">' +
+        '<div class="fg" style="margin: 0; flex: 1; min-width: 0; width: 100%;">' +
           '<label style="font-size: 11px; font-weight: 600;">请求别名 (Alias)</label>' +
           '<input type="text" value="' + escapeHtml(rule.alias) + '" placeholder="如: gpt-4o" oninput="updateCustomRoute(' + idx + ', \\\'alias\\\', this.value)">' +
           '<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; align-items: center;">' +
@@ -2577,28 +2596,28 @@ function renderCustomRoutes() {
             aliasTagsHtml +
           '</div>' +
         '</div>' +
-        // 美化后的目标模型/梯队池输入框（保留手动输入，同时与下方标签点选实时双向同步）
-        '<div class="fg" style="margin: 0; flex: 1.3;">' +
+        // 美化后的目标模型/梯队池输入框（手机端 100% 满宽，支持手输与下方点选联动）
+        '<div class="fg" style="margin: 0; flex: 1.3; min-width: 0; width: 100%;">' +
           '<label style="font-size: 11px; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">' +
             '<span>目标模型 / 梯队池 (Target)</span>' +
             '<span style="font-size: 10px; color: var(--color-muted);"><i class="fas fa-edit"></i> 可直接手输或在下方点选</span>' +
           '</label>' +
-          '<div style="position: relative; display: flex; align-items: center; margin-top: 2px;">' +
+          '<div style="position: relative; display: flex; align-items: center; margin-top: 2px; width: 100%;">' +
             '<i class="fas fa-crosshairs" style="position: absolute; left: 10px; color: var(--color-brand); font-size: 12px; pointer-events: none;"></i>' +
-            '<input type="text" value="' + escapeHtml(rule.target) + '" placeholder="如: flagship/auto 或 提供商ID/模型ID" oninput="updateCustomRoute(' + idx + ', \\\'target\\\', this.value)" style="padding-left: 28px; font-family: var(--font-mono); font-size: 12px; height: 34px; border: 1.5px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-paper); width: 100%;">' +
+            '<input type="text" value="' + escapeHtml(rule.target) + '" placeholder="如: flagship/auto 或 提供商ID/模型ID" oninput="updateCustomRoute(' + idx + ', \\\'target\\\', this.value)" style="padding-left: 28px; font-family: var(--font-mono); font-size: 12px; height: 34px; border: 1.5px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-paper); width: 100%; box-sizing: border-box;">' +
           '</div>' +
-          '<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; font-size: 11px;">' +
-            '<span style="color: var(--color-muted);">当前指向: <code style="color: var(--color-brand); font-weight: 600;">' + escapeHtml(rule.target || '未设置') + '</code></span>' +
+          '<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; font-size: 11px; flex-wrap: wrap; gap: 2px;">' +
+            '<span style="color: var(--color-muted);">当前指向: <code style="color: var(--color-brand); font-weight: 600; word-break: break-all;">' + escapeHtml(rule.target || '未设置') + '</code></span>' +
           '</div>' +
         '</div>' +
         // 规则说明
-        '<div class="fg" style="margin: 0; flex: 1;">' +
+        '<div class="fg" style="margin: 0; flex: 1; min-width: 0; width: 100%;">' +
           '<label style="font-size: 11px; font-weight: 600;">规则说明 (可选)</label>' +
           '<input type="text" value="' + escapeHtml(rule.description || '') + '" placeholder="如: 官方 gpt-4o 映射至第一梯队" oninput="updateCustomRoute(' + idx + ', \\\'description\\\', this.value)">' +
         '</div>' +
       '</div>' +
       // 精简美化后的目标标签选择面板（集成三大梯队池 + 提供商过滤 + 项目能力标签筛选）
-      '<div style="display: flex; flex-direction: column; gap: 8px; background: var(--color-surface); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--color-rule);">' +
+      '<div class="route-panel-box">' +
         // 1. 三大梯队池（优先级置顶快捷入口）
         '<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">' +
           '<span style="font-size: 11px; color: var(--color-muted); min-width: 65px; font-weight: 600;"><i class="fas fa-layer-group c-brand" style="margin-right: 3px;"></i>三大梯队:</span>' +
@@ -2620,7 +2639,7 @@ function renderCustomRoutes() {
           '</div>' +
         '</div>' +
         // 3. 过滤后展示的具体模型点选池（高密度精炼展示，支持滑动）
-        '<div style="display: flex; flex-wrap: wrap; gap: 5px; align-items: center; max-height: 95px; overflow-y: auto; padding-right: 4px; border-top: 1px dashed var(--color-rule); padding-top: 6px;">' +
+        '<div class="route-models-scroll">' +
           modelPillsHtml +
         '</div>' +
       '</div>' +
