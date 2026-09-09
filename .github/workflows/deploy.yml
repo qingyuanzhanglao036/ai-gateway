@@ -43,10 +43,13 @@ jobs:
             "https://opencode.fastly.cmliussss.net/zen/v1"
             "https://opencode.gcore.cmliussss.net/zen/v1"
           )
-          MIRRORS_URL=$(printf '%s\n' "${DEFAULT_URLS[@]}" | sed '$s/\n$//')
+          MIRRORS_URL=$(IFS=,; echo "${DEFAULT_URLS[*]}")
           EXTRA_URLS="${{ vars.OPENCODE_MIRRORS_URL }}"
           if [ -n "$EXTRA_URLS" ]; then
-            MIRRORS_URL="${MIRRORS_URL}\n${EXTRA_URLS}"
+            CLEAN_EXTRA=$(echo "$EXTRA_URLS" | tr '\n' ',' | sed -e 's/^[ ,]*//' -e 's/[ ,]*$//' -e 's/,,*/,/g')
+            if [ -n "$CLEAN_EXTRA" ]; then
+              MIRRORS_URL="${MIRRORS_URL},${CLEAN_EXTRA}"
+            fi
           fi
           cat > wrangler.toml << EOF
           name = "ai-gateway"
