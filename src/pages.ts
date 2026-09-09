@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.26
+ * 版本号: v1.0.29
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -2455,22 +2455,176 @@ async function triggerBatchSave() {
 }
 
 // ===== 指定自定义路由管理逻辑 =====
+// 全局记录自定义路由的筛选状态（在客户端内存中，随切换即时生效，不触发任何网络与 KV 操作）
+var routeFilterState = {}
+
+// 中文注释：更新指定路由规则卡片的提供商或标签筛选维度
+function setRouteFilter(ruleId, filterType, filterVal) {
+  if (!routeFilterState[ruleId]) {
+    routeFilterState[ruleId] = { prov: 'all', tag: 'all' }
+  }
+  routeFilterState[ruleId][filterType] = filterVal
+  renderCustomRoutes()
+}
+
+// 中文注释：渲染自定义路由配置列表，支持项目能力标签与提供商精确过滤、标签点选及精简美化的手动输入
 function renderCustomRoutes() {
   const container = document.getElementById('customRoutesContainer')
   if (!container) return
+  // 中文注释：空白提示状态下删除下方重复的“添加”按钮，仅保留右上角主按钮
   if (!stagedCustomRoutes || stagedCustomRoutes.length === 0) {
-    container.innerHTML = '<div class="empty-state"><i class="fas fa-route" aria-hidden="true"></i><h3>暂无自定义路由规则</h3><p>自定义路由优先级最高，可强制将别名路由映射至具体模型或梯队池。</p><button class="btn btn-p" type="button" onclick="addCustomRouteRow()">添加路由规则</button></div>'
+    container.innerHTML = '<div class="empty-state"><i class="fas fa-route" aria-hidden="true"></i><h3>暂无自定义路由规则</h3><p>自定义路由优先级最高，可强制将别名路由映射至具体模型或梯队池。点击右上角“添加路由规则”开始配置。</p></div>'
     return
   }
 
   container.innerHTML = stagedCustomRoutes.map(function(rule, idx) {
-    return '<article class="ki" style="display: flex; flex-direction: column; gap: 8px;" data-id="' + escapeHtml(rule.id) + '">' +
-      '<div class="fr" style="gap: 8px; align-items: center; width: 100%;">' +
-        // 中文注释：使用标准的单引号转义来生成 oninput 与 onchange 属性，避免多余反斜杠在客户端解析时引起致命的意外语法报错
-        '<div class="fg" style="margin: 0; flex: 1;"><label style="font-size: 11px;">请求别名 (Alias)</label><input type="text" value="' + escapeHtml(rule.alias) + '" placeholder="如: gpt-4o" oninput="updateCustomRoute(' + idx + ', \\\'alias\\\', this.value)"></div>' +
-        '<div class="fg" style="margin: 0; flex: 1;"><label style="font-size: 11px;">目标模型/梯队池 (Target)</label><input type="text" value="' + escapeHtml(rule.target) + '" placeholder="如: flagship/auto 或 deepseek/deepseek-chat" oninput="updateCustomRoute(' + idx + ', \\\'target\\\', this.value)"></div>' +
-        '<div class="fg" style="margin: 0; flex: 1.2;"><label style="font-size: 11px;">规则说明 (可选)</label><input type="text" value="' + escapeHtml(rule.description || '') + '" placeholder="如: 官方 gpt-4o 强行映射至第一梯队" oninput="updateCustomRoute(' + idx + ', \\\'description\\\', this.value)"></div>' +
+    // 1. 提取常用的请求别名标签，便于一键点选
+    var popularAliases = ['gpt-4o', 'gpt-4o-mini', 'claude-3-5-sonnet', 'deepseek-chat', 'dall-e-3']
+    var aliasTagsHtml = popularAliases.map(function(al) {
+      var isSel = rule.alias === al
+      return '<button type="button" class="btn btn-sm ' + (isSel ? 'btn-p' : 'btn-s') + '" style="padding: 1px 7px; font-size: 11px; border-radius: 4px;" onclick="selectRouteAlias(' + idx + ', \\\'' + al + '\\\')">' + escapeHtml(al) + '</button>'
+    }).join('')
+
+    // 2. 获取当前路由卡片的过滤条件（提供商 + 专属能力标签）
+    var filter = routeFilterState[rule.id] || { prov: 'all', tag: 'all' }
+    var activeProviders = (stagedProviders || []).filter(function(p) { return p.enabled })
+
+    // 生成提供商筛选小胶囊
+    var provPillsHtml = '<button type="button" class="btn btn-sm ' + (filter.prov === 'all' ? 'btn-p' : 'btn-s') + '" style="padding: 1px 6px; font-size: 10px; border-radius: 4px;" onclick="setRouteFilter(\\\'' + rule.id + '\\\', \\\'prov\\\', \\\'all\\\')">全部提供商</button>'
+    activeProviders.forEach(function(p) {
+      var isProvSel = filter.prov === p.id
+      provPillsHtml += '<button type="button" class="btn btn-sm ' + (isProvSel ? 'btn-p' : 'btn-s') + '" style="padding: 1px 6px; font-size: 10px; border-radius: 4px;" onclick="setRouteFilter(\\\'' + rule.id + '\\\', \\\'prov\\\', \\\'' + p.id + '\\\')">' + escapeHtml(p.name) + '</button>'
+    })
+
+    // 生成能力标签筛选小胶囊（文本、绘图、多模态、OpenClaw）
+    var tagDefs = [
+      { id: 'all', label: '🌟 全部' },
+      { id: 'text', label: '📝 适合文本' },
+      { id: 'image', label: '🎨 适合图片' },
+      { id: 'multimodal', label: '👁️ 适合多模态' },
+      { id: 'openclaw', label: '🐾 适合 OpenClaw' }
+    ]
+    var tagPillsHtml = tagDefs.map(function(td) {
+      var isTagSel = filter.tag === td.id
+      return '<button type="button" class="btn btn-sm ' + (isTagSel ? 'btn-p' : 'btn-s') + '" style="padding: 1px 6px; font-size: 10px; border-radius: 4px;" onclick="setRouteFilter(\\\'' + rule.id + '\\\', \\\'tag\\\', \\\'' + td.id + '\\\')">' + td.label + '</button>'
+    }).join('')
+
+    // 3. 根据提供商与能力标签筛选模型列表
+    var filteredModels = []
+    if (Array.isArray(stagedProviders)) {
+      stagedProviders.forEach(function(p) {
+        if (!p.enabled || !Array.isArray(p.models)) return
+        if (filter.prov !== 'all' && p.id !== filter.prov) return
+        p.models.forEach(function(m) {
+          if (!m.enabled) return
+          var cat = m.category || detectModelCategory(m.id)
+          var isOpenClaw = Boolean(m.tags && Array.isArray(m.tags) && m.tags.includes('openclaw'))
+
+          // 核心过滤逻辑：匹配文本/绘图/多模态/OpenClaw
+          if (filter.tag === 'text' && cat !== 'text') return
+          if (filter.tag === 'image' && cat !== 'image') return
+          if (filter.tag === 'multimodal' && cat !== 'multimodal') return
+          if (filter.tag === 'openclaw' && !isOpenClaw) return
+
+          filteredModels.push({
+            providerId: p.id,
+            providerName: p.name,
+            modelId: m.id,
+            category: cat,
+            isOpenClaw: isOpenClaw
+          })
+        })
+      })
+    }
+
+    // 生成筛选后的模型药丸按钮
+    var modelPillsHtml = ''
+    if (filteredModels.length > 0) {
+      modelPillsHtml = filteredModels.map(function(item) {
+        var fullTarget = item.providerId + '/' + item.modelId
+        var isSel = rule.target === fullTarget
+        var catBadge = ''
+        if (item.category === 'image') catBadge = '<span class="cat-chip cat-chip--image" style="margin-left: 3px; font-size: 9px; padding: 0 4px;">绘图</span>'
+        else if (item.category === 'multimodal') catBadge = '<span class="cat-chip cat-chip--multimodal" style="margin-left: 3px; font-size: 9px; padding: 0 4px;">多模态</span>'
+        else if (item.category === 'text') catBadge = '<span class="cat-chip cat-chip--text" style="margin-left: 3px; font-size: 9px; padding: 0 4px;">文本</span>'
+
+        var openclawBadge = item.isOpenClaw ? '<span class="cat-chip" style="background: oklch(92% 0.1 80); color: oklch(35% 0.1 70); margin-left: 3px; font-size: 9px; padding: 0 4px;">🐾 OpenClaw</span>' : ''
+
+        return '<button type="button" class="btn btn-sm ' + (isSel ? 'btn-p' : 'btn-s') + '" style="padding: 2px 7px; font-size: 11px; border-radius: 4px; display: inline-flex; align-items: center;" onclick="selectRouteTarget(' + idx + ', \\\'' + fullTarget + '\\\')" title="' + escapeHtml(item.providerName + ': ' + item.modelId) + '">' +
+          '<span><strong>[' + escapeHtml(item.providerName) + ']</strong> ' + escapeHtml(item.modelId) + '</span>' +
+          catBadge +
+          openclawBadge +
+          (isSel ? ' <i class="fas fa-check" style="margin-left: 4px;"></i>' : '') +
+        '</button>'
+      }).join('')
+    } else {
+      modelPillsHtml = '<div style="font-size: 11px; color: var(--color-muted); padding: 4px 0;"><i class="fas fa-info-circle"></i> 当前筛选条件下未找到匹配的模型，请切换提供商或能力标签试试</div>'
+    }
+
+    var isTier1 = rule.target === 'flagship/auto'
+    var isTier2 = rule.target === 'openclaw/auto'
+    var isTier3 = rule.target === 'drawing/auto'
+
+    return '<article class="ki" style="display: flex; flex-direction: column; gap: 10px;" data-id="' + escapeHtml(rule.id) + '">' +
+      // 输入与别名行（美化手动输入框，保留自由配置能力）
+      '<div class="fr" style="gap: 10px; align-items: flex-start; width: 100%;">' +
+        // 别名配置
+        '<div class="fg" style="margin: 0; flex: 1;">' +
+          '<label style="font-size: 11px; font-weight: 600;">请求别名 (Alias)</label>' +
+          '<input type="text" value="' + escapeHtml(rule.alias) + '" placeholder="如: gpt-4o" oninput="updateCustomRoute(' + idx + ', \\\'alias\\\', this.value)">' +
+          '<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; align-items: center;">' +
+            '<span style="font-size: 11px; color: var(--color-muted);">常用别名:</span>' +
+            aliasTagsHtml +
+          '</div>' +
+        '</div>' +
+        // 美化后的目标模型/梯队池输入框（保留手动输入，同时与下方标签点选实时双向同步）
+        '<div class="fg" style="margin: 0; flex: 1.3;">' +
+          '<label style="font-size: 11px; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">' +
+            '<span>目标模型 / 梯队池 (Target)</span>' +
+            '<span style="font-size: 10px; color: var(--color-muted);"><i class="fas fa-edit"></i> 可直接手输或在下方点选</span>' +
+          '</label>' +
+          '<div style="position: relative; display: flex; align-items: center; margin-top: 2px;">' +
+            '<i class="fas fa-crosshairs" style="position: absolute; left: 10px; color: var(--color-brand); font-size: 12px; pointer-events: none;"></i>' +
+            '<input type="text" value="' + escapeHtml(rule.target) + '" placeholder="如: flagship/auto 或 提供商ID/模型ID" oninput="updateCustomRoute(' + idx + ', \\\'target\\\', this.value)" style="padding-left: 28px; font-family: var(--font-mono); font-size: 12px; height: 34px; border: 1.5px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-paper); width: 100%;">' +
+          '</div>' +
+          '<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; font-size: 11px;">' +
+            '<span style="color: var(--color-muted);">当前指向: <code style="color: var(--color-brand); font-weight: 600;">' + escapeHtml(rule.target || '未设置') + '</code></span>' +
+          '</div>' +
+        '</div>' +
+        // 规则说明
+        '<div class="fg" style="margin: 0; flex: 1;">' +
+          '<label style="font-size: 11px; font-weight: 600;">规则说明 (可选)</label>' +
+          '<input type="text" value="' + escapeHtml(rule.description || '') + '" placeholder="如: 官方 gpt-4o 映射至第一梯队" oninput="updateCustomRoute(' + idx + ', \\\'description\\\', this.value)">' +
+        '</div>' +
       '</div>' +
+      // 精简美化后的目标标签选择面板（集成三大梯队池 + 提供商过滤 + 项目能力标签筛选）
+      '<div style="display: flex; flex-direction: column; gap: 8px; background: var(--color-surface); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--color-rule);">' +
+        // 1. 三大梯队池（优先级置顶快捷入口）
+        '<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">' +
+          '<span style="font-size: 11px; color: var(--color-muted); min-width: 65px; font-weight: 600;"><i class="fas fa-layer-group c-brand" style="margin-right: 3px;"></i>三大梯队:</span>' +
+          '<button type="button" class="btn btn-sm ' + (isTier1 ? 'btn-p' : 'btn-s') + '" style="padding: 2px 8px; font-size: 11px;" onclick="selectRouteTarget(' + idx + ', \\\'flagship/auto\\\')"><i class="fas fa-crown" style="margin-right: 3px;"></i>旗舰池 (flagship/auto)' + (isTier1 ? ' ✓' : '') + '</button>' +
+          '<button type="button" class="btn btn-sm ' + (isTier2 ? 'btn-p' : 'btn-s') + '" style="padding: 2px 8px; font-size: 11px;" onclick="selectRouteTarget(' + idx + ', \\\'openclaw/auto\\\')"><i class="fas fa-paw" style="margin-right: 3px;"></i>OpenClaw池 (openclaw/auto)' + (isTier2 ? ' ✓' : '') + '</button>' +
+          '<button type="button" class="btn btn-sm ' + (isTier3 ? 'btn-p' : 'btn-s') + '" style="padding: 2px 8px; font-size: 11px;" onclick="selectRouteTarget(' + idx + ', \\\'drawing/auto\\\')"><i class="fas fa-paint-brush" style="margin-right: 3px;"></i>绘图池 (drawing/auto)' + (isTier3 ? ' ✓' : '') + '</button>' +
+        '</div>' +
+        // 2. 筛选工具条：提供商筛选 + 项目标签筛选
+        '<div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px dashed var(--color-rule); padding-top: 6px;">' +
+          // 提供商维度
+          '<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">' +
+            '<span style="font-size: 11px; color: var(--color-muted); min-width: 65px;"><i class="fas fa-server" style="margin-right: 3px;"></i>提供商:</span>' +
+            provPillsHtml +
+          '</div>' +
+          // 项目标签维度（文本、绘图、多模态、OpenClaw）
+          '<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">' +
+            '<span style="font-size: 11px; color: var(--color-muted); min-width: 65px;"><i class="fas fa-tags" style="margin-right: 3px;"></i>能力标签:</span>' +
+            tagPillsHtml +
+          '</div>' +
+        '</div>' +
+        // 3. 过滤后展示的具体模型点选池（高密度精炼展示，支持滑动）
+        '<div style="display: flex; flex-wrap: wrap; gap: 5px; align-items: center; max-height: 95px; overflow-y: auto; padding-right: 4px; border-top: 1px dashed var(--color-rule); padding-top: 6px;">' +
+          modelPillsHtml +
+        '</div>' +
+      '</div>' +
+      // 开关与删除操作栏
       '<div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--color-rule); padding-top: 6px; width: 100%;">' +
         '<div class="fc" style="gap: 8px;">' +
           '<label class="tg"><input type="checkbox" ' + (rule.enabled ? 'checked' : '') + ' onchange="updateCustomRoute(' + idx + ', \\\'enabled\\\', this.checked)"><span class="sl"></span></label>' +
@@ -2482,6 +2636,25 @@ function renderCustomRoutes() {
   }).join('')
 }
 
+// 中文注释：点击标签快速选定目标模型或梯队，同步更新文本输入框和内存草稿并标记未保存变动
+function selectRouteTarget(idx, targetVal) {
+  if (stagedCustomRoutes && stagedCustomRoutes[idx]) {
+    stagedCustomRoutes[idx].target = targetVal
+    renderCustomRoutes()
+    markUnsaved()
+  }
+}
+
+// 中文注释：点击标签快速选定常用别名
+function selectRouteAlias(idx, aliasVal) {
+  if (stagedCustomRoutes && stagedCustomRoutes[idx]) {
+    stagedCustomRoutes[idx].alias = aliasVal
+    renderCustomRoutes()
+    markUnsaved()
+  }
+}
+
+// 中文注释：新增自定义路由规则，默认目标为第一梯队旗舰池
 function addCustomRouteRow() {
   if (!stagedCustomRoutes) stagedCustomRoutes = []
   stagedCustomRoutes.push({
@@ -2495,6 +2668,7 @@ function addCustomRouteRow() {
   markUnsaved()
 }
 
+// 中文注释：更新单个路由规则属性值（如手动输入修改 target、alias 或 description）
 function updateCustomRoute(idx, field, value) {
   if (stagedCustomRoutes && stagedCustomRoutes[idx]) {
     stagedCustomRoutes[idx][field] = value
@@ -2502,6 +2676,7 @@ function updateCustomRoute(idx, field, value) {
   }
 }
 
+// 中文注释：删除指定的自定义路由规则
 function removeCustomRouteRow(idx) {
   if (stagedCustomRoutes) {
     stagedCustomRoutes.splice(idx, 1)

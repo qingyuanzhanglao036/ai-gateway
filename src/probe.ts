@@ -1,10 +1,12 @@
 /**
- * 版本号: v1.0.12
+ * 版本号: v1.0.27
  * 模块: 自动择优探测调度框架与梯队智能补位迭代引擎
  * 
  * 核心设计准则：
  * 1. 海选延迟探测：使用全局游标持久化在 KV，遍历全部提供商全部模型，固定使用 prompt: "hi", max_tokens: 1。
  * 2. 梯队补位迭代引擎：当梯队出现空缺时触发。
+ *    - 跨提供商雨露均沾发牌机制：多提供商交错选取，彻底杜绝单一大户垄断候选队列。
+ *    - 传送带轮转游标：记忆提供商出场顺序，确保几十个提供商全部获得平等亮相机会。
  *    - 防抖控制：同一个梯队 5 秒内最多触发一次探测。
  *    - 轮数与数量约束：单次补位最多连续 3 轮海选，每轮最多补位 2 个模型。
  *    - 终止退出条件：梯队席位填满 / 所有可用模型遍历完成 / 到达最大 3 轮 / 无可用候选直接退出。
@@ -43,6 +45,13 @@ interface FlatModelItem {
 
 // 梯队探测防抖时间戳记录（单 Worker 实例内存生效，单位毫秒）
 const lastTierProbeTime: Record<string, number> = {
+  tier1: 0,
+  tier2: 0,
+  tier3: 0,
+}
+
+// 梯队补位提供商轮转游标（内存轮转传送带，实现多提供商平等轮流出场）
+const tierRefillProviderOffset: Record<string, number> = {
   tier1: 0,
   tier2: 0,
   tier3: 0,
@@ -410,7 +419,7 @@ export async function triggerTierRefill(
     }
   }
 
-  // 3. 统计有效可探测候选模型列表
+  // 3. 统计有效可探测候选模型（按提供商分组，准备雨露均沾交叉抽选）
   // 排除：未启用的提供商、未启用的模型、当前已处于 cooling 冷却中或 dead 永久失效的模型、已在该梯队中的模型
   interface Candidate {
     provider: Provider
@@ -424,9 +433,30 @@ export async function triggerTierRefill(
   const isTier2 = tierKey === 'tier2'
   const isTier3 = tierKey === 'tier3'
 
-  let candidates: Candidate[] = []
-  for (const p of providers) {
-    if (!p.enabled) continue
+  // 按提供商收集有效候选模型，准备多提供商交错抽取
+  const providerCandidatesMap = new Map<string, Candidate[]>()
+  const validProviders: Provider[] = []
+
+  // 传送带机制：获取并轮转提供商起点，确保每次补位时不同的提供商轮流排在最前面
+  const currentOffset = tierRefillProviderOffset[tierKey] || 0
+  const enabledProviders = providers.filter((p) => p.enabled)
+  
+  // 旋转提供商顺序，避免头部提供商永远垄断优先权
+  const rotatedProviders = enabledProviders.length > 0
+    ? [
+        ...enabledProviders.slice(currentOffset % enabledProviders.length),
+        ...enabledProviders.slice(0, currentOffset % enabledProviders.length),
+      ]
+    : []
+
+  // 记录下一次的轮转游标偏移
+  if (enabledProviders.length > 0) {
+    tierRefillProviderOffset[tierKey] = (currentOffset + 1) % enabledProviders.length
+  }
+
+  // 遍历所有已启用的提供商，整理可用候选
+  for (const p of rotatedProviders) {
+    const pCandidates: Candidate[] = []
     for (const m of p.models) {
       if (!m.enabled) continue
       // 检查模型健康状态：冷却中或永久失效均跳过
@@ -442,8 +472,31 @@ export async function triggerTierRefill(
         // 允许候选进入
       }
 
-      candidates.push({ provider: p, model: m })
+      pCandidates.push({ provider: p, model: m })
     }
+
+    if (pCandidates.length > 0) {
+      providerCandidatesMap.set(p.id, pCandidates)
+      validProviders.push(p)
+    }
+  }
+
+  // 4. “雨露均沾发牌式”交错组合候选名单
+  // 无论有多少个提供商，每轮轮流从各提供商抽取 1 个模型，彻底杜绝单一大户垄断
+  const candidates: Candidate[] = []
+  let hasMore = true
+  let modelIndexInProvider = 0
+
+  while (hasMore) {
+    hasMore = false
+    for (const p of validProviders) {
+      const list = providerCandidatesMap.get(p.id)
+      if (list && modelIndexInProvider < list.length) {
+        candidates.push(list[modelIndexInProvider])
+        hasMore = true
+      }
+    }
+    modelIndexInProvider++
   }
 
   // 约束：无可用候选直接退出，禁止空循环
@@ -460,7 +513,7 @@ export async function triggerTierRefill(
   let candidateIndex = 0
   let stateModified = false
 
-  // 4. 补位主循环：最多连续 3 轮完整海选
+  // 5. 补位主循环：最多连续 3 轮完整海选
   while (
     round < MAX_REFILL_PROBE_ROUNDS &&
     targetTier.models.length < targetTier.maxSeats &&
@@ -473,17 +526,23 @@ export async function triggerTierRefill(
       success: boolean
     }> = []
 
-    // 本轮从候选列表中抽取模型进行极低消耗探测（每次抽取至多 4 个候选探测，从中择优）
+    // 本轮从候选列表中抽取模型（每次抽取至多 4 个不同来源的候选进行极低消耗并发探测）
     const batchSize = Math.min(4, candidates.length - candidateIndex)
-    for (let i = 0; i < batchSize; i++) {
-      const cand = candidates[candidateIndex]
-      candidateIndex++
+    const currentBatch = candidates.slice(candidateIndex, candidateIndex + batchSize)
+    candidateIndex += batchSize
 
-      // 执行极简短 prompt 探测
-      const probeRes = await probeSingleModel(env, cand.provider, cand.model, isTier2)
+    // 并行探测本批次候选模型（因为来自不同提供商，并行探测不超频、不触发单平台限流，速度大幅提升）
+    const probeResults = await Promise.all(
+      currentBatch.map(async (cand) => {
+        const probeRes = await probeSingleModel(env, cand.provider, cand.model, isTier2)
+        return { cand, probeRes }
+      })
+    )
 
+    // 收集处理本批次探测结果
+    for (const { cand, probeRes } of probeResults) {
       if (probeRes.success) {
-        // 探测成功，重置失败计数器（如果之前有记录），并记录延迟样本
+        // 探测成功，重置失败计数器，并记录延迟样本
         cand.model.status = 'healthy'
         delete cand.model.cooldownUntil
         roundProbeResults.push({
@@ -497,7 +556,8 @@ export async function triggerTierRefill(
         cand.model.failCount = (cand.model.failCount || 0) + 1
 
         // 约束：如果遇到 401/403/404 或累计失败达到 3 次，标红永久失效
-        const isAuthOrNotFound = probeRes.statusCode === 401 || probeRes.statusCode === 403 || probeRes.statusCode === 404
+        const isAuthOrNotFound =
+          probeRes.statusCode === 401 || probeRes.statusCode === 403 || probeRes.statusCode === 404
         if (isAuthOrNotFound || cand.model.failCount >= MODEL_MAX_PROBE_FAILURES) {
           cand.model.status = 'dead'
           cand.model.deadReason = isAuthOrNotFound
