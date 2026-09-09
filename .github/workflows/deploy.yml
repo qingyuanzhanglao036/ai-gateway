@@ -29,12 +29,21 @@ jobs:
 
       - name: Generate wrangler.toml with admin credentials
         run: |
+          RAW_USER="${{ vars.ADMIN_USERNAME }}"
+          RAW_PASS="${{ vars.ADMIN_PASSWORD }}"
+          # 自动清除环境变量可能包含的外层英文/中文引号与首尾空格，确保生成合法的 TOML 配置
+          CLEAN_USER=$(echo "$RAW_USER" | sed -e 's/^[ "'\''`]*//' -e 's/[ "'\''`]*$//')
+          CLEAN_PASS=$(echo "$RAW_PASS" | sed -e 's/^[ "'\''`]*//' -e 's/[ "'\''`]*$//')
+          # 若环境变量为空，回退到默认兜底账号密码
+          if [ -z "$CLEAN_USER" ]; then CLEAN_USER="admin"; fi
+          if [ -z "$CLEAN_PASS" ]; then CLEAN_PASS="admin123456"; fi
+
           DEFAULT_URLS=(
             "https://opencode.ai.cmliussss.net/zen/v1"
             "https://opencode.fastly.cmliussss.net/zen/v1"
             "https://opencode.gcore.cmliussss.net/zen/v1"
           )
-          MIRRORS_URL=$(printf '%s\\n' "${DEFAULT_URLS[@]}" | sed '$s/\\n$//')
+          MIRRORS_URL=$(printf '%s\n' "${DEFAULT_URLS[@]}" | sed '$s/\n$//')
           EXTRA_URLS="${{ vars.OPENCODE_MIRRORS_URL }}"
           if [ -n "$EXTRA_URLS" ]; then
             MIRRORS_URL="${MIRRORS_URL}\n${EXTRA_URLS}"
@@ -50,8 +59,8 @@ jobs:
           binding = "KV"
 
           [vars]
-          ADMIN_USERNAME = ${{ vars.ADMIN_USERNAME }}
-          ADMIN_PASSWORD = ${{ vars.ADMIN_PASSWORD }}
+          ADMIN_USERNAME = "${CLEAN_USER}"
+          ADMIN_PASSWORD = "${CLEAN_PASS}"
           OPENCODE_MIRRORS_URL = "${MIRRORS_URL}"
           EOF
 

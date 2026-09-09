@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.3
+ * 版本号: v1.0.4
  * 模块: 身份验证与管理员权限鉴权中间件（支持 iframe 预览环境与双通道会话凭据）
  */
 import { Context, Next } from 'hono'
@@ -22,8 +22,12 @@ export function cleanConfigString(val: string | undefined | null): string {
   if (!val) return ''
   // 1. 去除首尾空白字符
   let str = val.trim()
-  // 2. 检查并剥离首尾匹配的单引号或双引号
-  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+  // 2. 循环剥离首尾匹配的单/双引号以及反引号
+  while (str.length >= 2 && (
+    (str.startsWith('"') && str.endsWith('"')) ||
+    (str.startsWith("'") && str.endsWith("'")) ||
+    (str.startsWith('`') && str.endsWith('`'))
+  )) {
     str = str.slice(1, -1).trim()
   }
   return str

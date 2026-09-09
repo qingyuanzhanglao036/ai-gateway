@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.10
+ * 版本号: v1.0.11
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -111,6 +111,7 @@ ${H('首页')}
       <span class="brand__mark" aria-hidden="true"><i class="fas fa-cloud"></i></span>
       <span class="brand__name">${SITE_CONFIG.title}</span>
       <span class="brand__descriptor">API CONTROL PLANE</span>
+      <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 9999px; background: rgba(59, 130, 246, 0.1); color: var(--color-brand, #2563eb); font-size: 11px; font-weight: 600; font-family: var(--font-mono); border: 1px solid rgba(59, 130, 246, 0.2);">${SITE_CONFIG.version}</span>
     </a>
     <nav class="topbar__actions" aria-label="主导航">
       ${isLoggedIn
@@ -124,7 +125,7 @@ ${H('首页')}
 <main>
   <section class="shell home-hero" aria-labelledby="home-title">
     <div class="home-hero__copy">
-      <p class="eyebrow"><span aria-hidden="true"></span>UNIFIED AI GATEWAY</p>
+      <p class="eyebrow"><span aria-hidden="true"></span>UNIFIED AI GATEWAY <span style="font-weight:600; color:var(--color-brand, #2563eb); margin-left:6px;">(${SITE_CONFIG.version})</span></p>
       <h1 id="home-title">一个 API，调用已配置的所有模型。</h1>
       <p class="home-hero__lede">统一的 OpenAI / Anthropic 兼容入口。模型按提供商归档，转发 Key、启用状态和故障转移集中管理。</p>
       <div class="endpoint-box" aria-label="API 接入地址">
