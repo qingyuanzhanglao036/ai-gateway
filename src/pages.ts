@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.19
+ * 版本号: v1.0.26
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -947,30 +947,59 @@ ${H('管理')}
                   </div>
                 </div>
                 <div id="ml-${escapePageHtml(p.id)}">${p.models.map((m,mi)=>{
+                  // 1. 获取模型当前的类别（如 text/image 等）
                   const cat = m.category || detectModelCategory(m.id)
+                  
+                  // 2. 判定模型当前的运行状况（正常、冷却中或已熔断失效）
                   const isDead = m.status === 'dead'
                   const isCooling = !isDead && (m.status === 'cooling' || (m.cooldownUntil && m.cooldownUntil > Date.now()))
-                  let statusBadge = `<span class="status-chip status-chip--ok" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="运行正常">正常</span>`
+                  
+                  // 3. 动态配置健康状态指标徽章的样式与内容
+                  let statusBadge = `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="运行正常"><i class="fas fa-check-circle" style="color: #146c2e;"></i>正常</span>`
                   if (isDead) {
-                    statusBadge = `<span class="status-chip status-chip--err" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="连续失败已熔断">永久失效</span>`
+                    statusBadge = `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #f8b4b4; background: #fdf2f2; color: #9b1c1c; font-weight: 500;" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="连续失败已熔断"><i class="fas fa-times-circle" style="color: #9b1c1c;"></i>永久失效</span>`
                   } else if (isCooling) {
-                    statusBadge = `<span class="status-chip status-chip--warn" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="冷却中">冷却中</span>`
+                    statusBadge = `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #fde047; background: #fef9c3; color: #713f12; font-weight: 500;" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="冷却中"><i class="fas fa-snowflake" style="color: #713f12;"></i>冷却中</span>`
                   }
 
-                  return `<div class="fc mb-3 field-row" data-idx="${mi}">
-                    <input type="text" value="${escapePageHtml(m.id)}" class="fx1" id="mid-${escapePageHtml(p.id)}-${mi}" placeholder="模型 ID" oninput="markUnsaved()">
-                    <select class="select-sm" id="mcat-${escapePageHtml(p.id)}-${mi}" onchange="changeModelCategory('${p.id}','${m.id}',this.value,${mi})" style="width: 82px;" title="模型分类（手动优先）">
-                      <option value="text" ${cat==='text'?'selected':''}>文本</option>
-                      <option value="image" ${cat==='image'?'selected':''}>绘图</option>
-                      <option value="multimodal" ${cat==='multimodal'?'selected':''}>多模态</option>
-                      <option value="other" ${cat==='other'?'selected':''}>其他</option>
-                    </select>
-                    ${statusBadge}
-                    <button class="btn btn-s btn-sm" id="munblock-${escapePageHtml(p.id)}-${mi}" style="${isDead?'':'display:none;'}" onclick="unblockModel('${p.id}','${m.id}',${mi})" title="解封此模型，清零失败计数器并恢复正常"><i class="fas fa-unlock"></i>解封</button>
-                    <label class="tg"><input type="checkbox" ${m.enabled?'checked':''} id="men-${escapePageHtml(p.id)}-${mi}" aria-label="启用模型" onchange="markUnsaved()"><span class="sl"></span></label>
-                    <button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy" aria-hidden="true"></i></button>
-                    <button class="icon-btn" onclick="testMdl('${p.id}','${m.id}',${mi})" title="测试模型" aria-label="测试模型"><i class="fas fa-plug" aria-hidden="true"></i></button>
-                    <button class="icon-btn" onclick="rmMdl('${p.id}',${mi})" title="移除模型" aria-label="移除模型"><i class="fas fa-times" aria-hidden="true"></i></button>
+                  // 4. 智能匹配在席 OpenClaw 池，若包含则展示推荐徽章，否则展示不合适徽章
+                  const isOpenClaw = tierConfig.tier2?.models?.some(tm => tm.providerId === p.id && tm.modelId === m.id)
+                  const clawBadge = isOpenClaw 
+                    ? `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #dcd6f7; background: #f3efff; color: #512da8; font-weight: 500;" title="此模型已指派至 OpenClaw 别名池内"><i class="fas fa-robot"></i>OpenClaw 适合</span>`
+                    : `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #64748b; font-weight: 500;" title="此模型未进入 OpenClaw 别名池"><i class="fas fa-ban"></i>OpenClaw 不适合</span>`
+
+                  // 5. 拉取并展示当前模型最近的自动海选或真实用户双延迟数据
+                  const key = `${p.id}:${m.id}`
+                  const stats = latenciesMap[key] || { probeLatency: null, realLatency: null }
+                  const val = stats.realLatency || stats.probeLatency
+                  const latencyBadge = val 
+                    ? `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" title="最新一次探测或实测加权平均延迟：${val}ms"><i class="fas fa-tachometer-alt"></i>${val} ms</span>`
+                    : `<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #94a3b8; font-weight: 500;" title="该模型目前暂无成功调用的延迟数据"><i class="fas fa-tachometer-alt"></i>暂无 ms</span>`
+
+                  // 6. 返回全新的精致卡片结构，底层 ID 和类名均完全保持兼容，绝不冲突原有保存逻辑
+                  return `<div class="fc mb-4 field-row model-card" data-idx="${mi}" style="display: flex; flex-direction: column; gap: 12px; background: var(--color-paper, #ffffff); border: 1px solid var(--color-rule-2, #e2e8f0); border-radius: 12px; padding: 14px 16px; align-items: stretch; width: 100%; box-sizing: border-box;">
+                    <!-- 第一行：模型名称、复制、状态开关与单项删除 -->
+                    <div class="model-row-header" style="display: flex; align-items: center; gap: 8px; width: 100%;">
+                      <input type="text" value="${escapePageHtml(m.id)}" class="fx1 ami" id="mid-${escapePageHtml(p.id)}-${mi}" placeholder="模型 ID" oninput="markUnsaved()" style="height: 38px; padding-inline: 12px; border-radius: 8px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper-2, #f8fafc); font-family: var(--font-mono); font-size: 14px;">
+                      <button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="far fa-copy" aria-hidden="true"></i></button>
+                      <label class="tg" title="启用模型" style="margin: 0; flex-shrink: 0;"><input type="checkbox" ${m.enabled?'checked':''} id="men-${escapePageHtml(p.id)}-${mi}" aria-label="启用模型" onchange="markUnsaved()"><span class="sl"></span></label>
+                      <button class="icon-btn" onclick="rmMdl('${p.id}',${mi})" title="移除模型" aria-label="移除模型" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="fas fa-times" aria-hidden="true"></i></button>
+                    </div>
+                    <!-- 第二行：类型下拉选择、健康及测速测通仪表胶囊徽章 -->
+                    <div class="model-row-badges" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%;">
+                      <select class="select-sm amcat" id="mcat-${escapePageHtml(p.id)}-${mi}" onchange="changeModelCategory('${p.id}','${m.id}',this.value,${mi})" style="width: 86px; height: 30px; font-size: 12px; border-radius: 6px; padding: 0 6px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper, #fff); margin: 0; outline: none;" title="模型分类（手动优先）">
+                        <option value="text" ${cat==='text'?'selected':''}>文本</option>
+                        <option value="image" ${cat==='image'?'selected':''}>绘图</option>
+                        <option value="multimodal" ${cat==='multimodal'?'selected':''}>多模态</option>
+                        <option value="other" ${cat==='other'?'selected':''}>其他</option>
+                      </select>
+                      ${statusBadge}
+                      <button class="btn btn-s btn-sm" id="munblock-${escapePageHtml(p.id)}-${mi}" style="${isDead?'':'display:none;'}" onclick="unblockModel('${p.id}','${m.id}',${mi})" title="解封此模型，清零失败计数器并恢复正常"><i class="fas fa-unlock"></i>解封</button>
+                      ${clawBadge}
+                      ${latencyBadge}
+                      <!-- 仪表盘一键单测按钮 -->
+                      <button class="icon-btn" onclick="testMdl('${p.id}','${m.id}',${mi})" title="对该模型进行即时连接测试与可用性诊断" aria-label="测试此模型" style="margin: 0; padding: 4px 8px; font-size: 12px; height: 28px; border: 1px solid var(--color-rule-2); background: var(--color-paper-2); border-radius: 6px; color: var(--color-muted); display: inline-flex; align-items: center; gap: 4px;"><i class="fas fa-tachometer-alt" aria-hidden="true"></i></button>
+                    </div>
                   </div>`
                 }).join('')}</div>
                 <div class="fc mt-1 field-row">
@@ -1443,7 +1472,8 @@ function renderModelGrid(models, editId, providerId) {
       : "addMdlToForm('" + modelId + "')"
     return '<div class="mdl-item">' +
       '<i class="fas fa-cube"></i>' +
-			'<span class="fx1 cp ov" onclick="copyText(\\'' + modelId + '\\',this)">' + safeId + '</span>' +
+      // 安全转义单引号，防止客户端渲染时语法中断
+			'<span class="fx1 cp ov" onclick="copyText(\\\'' + modelId + '\\\',this)">' + safeId + '</span>' +
       '<button class="btn btn-gh mdl-add-btn" onclick="' + addFn + '" title="添加到表单">+</button></div>'
   }).join('')
   return '<div class="grid-2-gap6">' + h + '</div>'
@@ -1476,6 +1506,7 @@ function importAllPulledModels(panelId, providerId) {
 // 可用模型面板 heading（添加态静态 HTML 与编辑态动态生成共用同一结构）
 function modelPanelHeading(panelId, providerId) {
   var pId = providerId || ''
+  // 使用三重反斜杠安全转义传参，避免浏览器解析为非法字符串语法错误
   var importBtn = '<button class="btn btn-s btn-sm" type="button" onclick="importAllPulledModels(\\\'' + panelId + '\\\',\\\'' + pId + '\\\')" title="一键将已拉取出的模型全量添加并自动识别分类"><i class="fas fa-file-import"></i> 一键添加已拉取模型</button>'
   return '<div class="panel-heading"><div>' +
     '<span class="panel-heading__mark"><i class="fas fa-cube" aria-hidden="true"></i></span>' +
@@ -1520,6 +1551,7 @@ function detectModelCategory(mid) {
 }
 
 // 向添加表单容器加入单条模型输入行
+// 向添加表单容器加入单条模型输入行（精美双行卡片化改造，与图片外观相契合，底层完全向下兼容）
 function addModelRowToContainer(containerId, mid, category, enabled) {
   var c = document.getElementById(containerId)
   if (!c) return false
@@ -1527,21 +1559,83 @@ function addModelRowToContainer(containerId, mid, category, enabled) {
   var existing = Array.from(c.querySelectorAll('.ami')).map(function(inp) { return inp.value.trim().toLowerCase() })
   if (existing.includes(mid.toLowerCase())) return false
 
+  // 1. 获取对应的 Provider ID (用于动态检测 OpenClaw 在席状态与延迟)
+  var provId = containerId.startsWith('ml-') ? containerId.substring(3) : (document.getElementById('aid')?.value.trim() || '')
+  var mi = c.querySelectorAll('.field-row').length
+
   var cat = (category && category !== 'auto') ? category : detectModelCategory(mid)
+
+  // 2. 智能判定 OpenClaw 在席匹配度
+  var isOpenClaw = false
+  if (window.stagedTiers && window.stagedTiers.tier2 && window.stagedTiers.tier2.models) {
+    isOpenClaw = window.stagedTiers.tier2.models.some(function(tm) {
+      return tm.providerId === provId && tm.modelId === mid
+    })
+  }
+
+  // 3. 拉取最新的测速延迟数据
+  var latencyVal = null
+  if (window.latenciesMap) {
+    var key = provId + ":" + mid
+    var stats = window.latenciesMap[key]
+    if (stats) {
+      latencyVal = stats.realLatency || stats.probeLatency
+    }
+  }
+
+  // 4. 生成 OpenClaw 的胶囊标签 HTML
+  var clawBadge = isOpenClaw 
+    ? '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #dcd6f7; background: #f3efff; color: #512da8; font-weight: 500;" title="在席 OpenClaw 池"><i class="fas fa-robot"></i>OpenClaw 适合</span>'
+    : '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #64748b; font-weight: 500;" title="未入席 OpenClaw 池"><i class="fas fa-ban"></i>OpenClaw 不适合</span>'
+
+  // 5. 组装延迟信息以及对应的测速按钮
+  var latencyAndTestHtml = ''
+  if (latencyVal) {
+    latencyAndTestHtml = '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" title="最近测速延迟"><i class="fas fa-tachometer-alt"></i>' + latencyVal + ' ms</span>'
+  } else {
+    latencyAndTestHtml = '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #94a3b8; font-weight: 500;" title="无最近测速数据"><i class="fas fa-tachometer-alt"></i>暂无 ms</span>'
+  }
+
+  // 根据当前是在创建页面还是编辑页面，绑定正确的测速触发函数
+  if (containerId.startsWith('ml-')) {
+    latencyAndTestHtml += '<button type="button" class="icon-btn" onclick="testMdl(\\\'' + provId + '\\\',\\\'' + mid + '\\\',' + mi + ')" title="测试此模型" style="margin: 0; padding: 4px 8px; font-size: 12px; height: 28px; border: 1px solid var(--color-rule-2); background: var(--color-paper-2); border-radius: 6px; color: var(--color-muted); display: inline-flex; align-items: center; gap: 4px;"><i class="fas fa-tachometer-alt" aria-hidden="true"></i></button>'
+  } else {
+    latencyAndTestHtml += '<button type="button" class="icon-btn" onclick="testNewMdl(this)" title="测试此模型" style="margin: 0; padding: 4px 8px; font-size: 12px; height: 28px; border: 1px solid var(--color-rule-2); background: var(--color-paper-2); border-radius: 6px; color: var(--color-muted); display: inline-flex; align-items: center; gap: 4px;"><i class="fas fa-tachometer-alt" aria-hidden="true"></i></button>'
+  }
+
+  // 绑定删除卡片的事件（编辑模式调用 rmMdl 方法通知更新，新增模式直接移除节点）
+  var removeActionHtml = containerId.startsWith('ml-') 
+    ? 'rmMdl(\\\'' + provId + '\\\',' + mi + ')'
+    : 'this.closest(\\\'.field-row\\\').remove()'
+
   var d = document.createElement('div')
-  d.className = 'fc mb-4 field-row'
-  d.innerHTML = '<input type="text" value="' + escapeHtml(mid) + '" class="fx1 ami" aria-label="模型 ID">' +
-    '<select class="select-sm amcat" style="width: 82px;" title="模型分类">' +
-    '<option value="auto">自动识别</option>' +
-    '<option value="text" ' + (cat === 'text' ? 'selected' : '') + '>文本</option>' +
-    '<option value="image" ' + (cat === 'image' ? 'selected' : '') + '>绘图</option>' +
-    '<option value="multimodal" ' + (cat === 'multimodal' ? 'selected' : '') + '>多模态</option>' +
-    '<option value="other" ' + (cat === 'other' ? 'selected' : '') + '>其他</option>' +
-    '</select>' +
-    '<label class="tg" title="启用模型"><input type="checkbox" ' + (enabled !== false ? 'checked' : '') + ' class="ame" aria-label="启用模型"><span class="sl"></span></label>' +
-    '<button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy"></i></button>' +
-    '<button class="icon-btn" onclick="testNewMdl(this)" title="测试模型" aria-label="测试模型"><i class="fas fa-plug"></i></button>' +
-    '<button class="icon-btn" onclick="this.parentElement.remove()" title="移除模型" aria-label="移除模型"><i class="fas fa-times"></i></button>'
+  d.className = 'fc mb-4 field-row model-card'
+  d.dataset.idx = mi
+  d.style.cssText = 'display: flex; flex-direction: column; gap: 12px; background: var(--color-paper, #ffffff); border: 1px solid var(--color-rule-2, #e2e8f0); border-radius: 12px; padding: 14px 16px; align-items: stretch; width: 100%; box-sizing: border-box;'
+  
+  d.innerHTML = 
+    '<!-- 第一行：模型 ID、一键复制、蓝绿开关、删除 -->' +
+    '<div class="model-row-header" style="display: flex; align-items: center; gap: 8px; width: 100%;">' +
+      '<input type="text" value="' + escapeHtml(mid) + '" class="fx1 ami" id="mid-' + provId + '-' + mi + '" placeholder="模型 ID" oninput="markUnsaved()" style="height: 38px; padding-inline: 12px; border-radius: 8px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper-2, #f8fafc); font-family: var(--font-mono); font-size: 14px;">' +
+      '<button type="button" class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="far fa-copy" aria-hidden="true"></i></button>' +
+      '<label class="tg" title="启用模型" style="margin: 0; flex-shrink: 0;"><input type="checkbox" ' + (enabled !== false ? 'checked' : '') + ' id="men-' + provId + '-' + mi + '" class="ame" onchange="markUnsaved()"><span class="sl"></span></label>' +
+      '<button type="button" class="icon-btn" onclick="' + removeActionHtml + '" title="移除模型" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="fas fa-times" aria-hidden="true"></i></button>' +
+    '</div>' +
+    '<!-- 第二行：分类选项、健康状况胶囊、OpenClaw兼容胶囊、实时测速与一键测通 -->' +
+    '<div class="model-row-badges" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%;">' +
+      '<select class="select-sm amcat" id="mcat-' + provId + '-' + mi + '" onchange="changeModelCategory(\\\'' + provId + '\\\',\\\'' + mid + '\\\',this.value,' + mi + ')" style="width: 86px; height: 30px; font-size: 12px; border-radius: 6px; padding: 0 6px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper, #fff); margin: 0; outline: none;" title="模型分类">' +
+        '<option value="auto">自动识别</option>' +
+        '<option value="text" ' + (cat === 'text' ? 'selected' : '') + '>文本</option>' +
+        '<option value="image" ' + (cat === 'image' ? 'selected' : '') + '>绘图</option>' +
+        '<option value="multimodal" ' + (cat === 'multimodal' ? 'selected' : '') + '>多模态</option>' +
+        '<option value="other" ' + (cat === 'other' ? 'selected' : '') + '>其他</option>' +
+      '</select>' +
+      '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" id="mstatus-' + provId + '-' + mi + '" title="运行正常"><i class="fas fa-check-circle" style="color: #146c2e;"></i>正常</span>' +
+      '<button type="button" class="btn btn-s btn-sm" id="munblock-' + provId + '-' + mi + '" style="display:none;" onclick="unblockModel(\\\'' + provId + '\\\',\\\'' + mid + '\\\',' + mi + ')" title="解封此模型"><i class="fas fa-unlock"></i>解封</button>' +
+      clawBadge +
+      latencyAndTestHtml +
+    '</div>'
+
   c.appendChild(d)
   return true
 }
@@ -1650,11 +1744,12 @@ function renderProviderCard(p) {
   const article = document.createElement('article')
   article.className = 'pi'
   article.dataset.id = p.id
-  article.innerHTML = '<div class="ps" onclick="tog(\\'' + p.id + '\\')" role="button" tabindex="0">' +
+  // 中文注释：使用标准的单引号转义来生成 onclick 属性，避免多余反斜杠在客户端解析时引起致命的意外语法报错
+  article.innerHTML = '<div class="ps" onclick="tog(\\\'' + p.id + '\\\')" role="button" tabindex="0">' +
     '<div class="l"><i class="fas fa-chevron-right provider-chevron" id="ch-' + p.id + '"></i>' +
     '<span class="provider-avatar">' + escapeHtml(p.name.charAt(0).toUpperCase() || 'A') + '</span>' +
     '<div><h3>' + escapeHtml(p.name) + '</h3><div class="pu"><code>' + escapeHtml(p.id) + '</code><span>' + (p.apiType==='anthropic'?'Anthropic':'OpenAI') + '</span><span>' + p.apiKeys.length + ' Keys</span><span>' + p.models.length + ' 模型</span></div></div></div>' +
-    '<div class="fc fx-s0" onclick="event.stopPropagation()"><label class="tg"><input type="checkbox" ' + (p.enabled?'checked':'') + ' id="en-' + p.id + '" onchange="togglePb(\\'' + p.id + '\\',this.checked)"><span class="sl"></span></label><span class="bd ' + (p.enabled?'bd-on':'bd-off') + '">' + (p.enabled?'已启用':'未启用') + '</span></div>' +
+    '<div class="fc fx-s0" onclick="event.stopPropagation()"><label class="tg"><input type="checkbox" ' + (p.enabled?'checked':'') + ' id="en-' + p.id + '" onchange="togglePb(\\\'' + p.id + '\\\',this.checked)"><span class="sl"></span></label><span class="bd ' + (p.enabled?'bd-on':'bd-off') + '">' + (p.enabled?'已启用':'未启用') + '</span></div>' +
     '</div>' +
     '<div class="pd" id="dt-' + p.id + '">' +
     '<div class="detail-heading"><div><h3>编辑 ' + escapeHtml(p.name) + '</h3><p>暂存修改后，点击左侧统一保存即可生效。</p></div><span class="protocol-chip">' + (p.apiType==='anthropic'?'ANTHROPIC':'OPENAI') + '</span></div>' +
@@ -1663,41 +1758,94 @@ function renderProviderCard(p) {
     '<div class="fg"><label>API 格式</label><select id="at-' + p.id + '" class="select-sm" onchange="markUnsaved()"><option value="openai" ' + (p.apiType==='openai'?'selected':'') + '>OpenAI 兼容</option><option value="anthropic" ' + (p.apiType==='anthropic'?'selected':'') + '>Anthropic 兼容</option></select></div>' +
     '<fieldset class="form-group"><legend>上游 API Keys</legend><div id="keys-' + p.id + '">' +
     p.apiKeys.map(function(k, ki) {
-      return '<div class="fc mb-3 field-row" data-kidx="' + ki + '"><input type="text" value="' + escapeHtml(k.key) + '" class="fx1" id="k-' + p.id + '-' + ki + '" oninput="markUnsaved()"><label class="tg"><input type="checkbox" ' + (k.enabled?'checked':'') + ' id="ken-' + p.id + '-' + ki + '" onchange="markUnsaved()"><span class="sl"></span></label><button class="icon-btn" onclick="copyRowVal(this)"><i class="far fa-copy"></i></button><button class="icon-btn" onclick="testKeyRow(\\'' + p.id + '\\',' + ki + ')"><i class="fas fa-plug"></i></button><button class="icon-btn" onclick="rmKeyRow(\\'' + p.id + '\\',' + ki + ')"><i class="fas fa-times"></i></button></div>'
+      // 中文注释：使用标准的单引号转义来生成 onclick 属性，避免多余反斜杠在客户端解析时引起致命的意外语法报错
+      return '<div class="fc mb-3 field-row" data-kidx="' + ki + '"><input type="text" value="' + escapeHtml(k.key) + '" class="fx1" id="k-' + p.id + '-' + ki + '" oninput="markUnsaved()"><label class="tg"><input type="checkbox" ' + (k.enabled?'checked':'') + ' id="ken-' + p.id + '-' + ki + '" onchange="markUnsaved()"><span class="sl"></span></label><button class="icon-btn" onclick="copyRowVal(this)"><i class="far fa-copy"></i></button><button class="icon-btn" onclick="testKeyRow(\\\'' + p.id + '\\\',' + ki + ')"><i class="fas fa-plug"></i></button><button class="icon-btn" onclick="rmKeyRow(\\\'' + p.id + '\\\',' + ki + ')"><i class="fas fa-times"></i></button></div>'
     }).join('') +
-    '</div><div class="fc mt-1 field-row"><input type="text" id="nk-' + p.id + '" placeholder="新的 API Key" class="fx1"><button class="btn btn-s" onclick="addKeyRow(\\'' + p.id + '\\')"><i class="fas fa-plus"></i>添加</button></div></fieldset>' +
+    '</div><div class="fc mt-1 field-row"><input type="text" id="nk-' + p.id + '" placeholder="新的 API Key" class="fx1"><button class="btn btn-s" onclick="addKeyRow(\\\'' + p.id + '\\\')"><i class="fas fa-plus"></i>添加</button></div></fieldset>' +
     '<fieldset class="form-group">' +
     '<div class="fc justify-between mb-2" style="flex-wrap: wrap; gap: 8px;">' +
     '<legend style="margin-bottom: 0;">模型列表 (' + p.models.length + ')</legend>' +
     '<div class="fc" style="gap: 6px;">' +
-    '<button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForEdit(\\'' + p.id + '\\')" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键添加拉取的模型</button>' +
-    '<button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit(\\'' + p.id + '\\')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键批量粘贴</button>' +
-    '<button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForEdit(\\'' + p.id + '\\')" title="清空该提供商下的所有模型"><i class="fas fa-trash"></i>一键删除所有模型</button>' +
+    // 中文注释：使用标准的单引号转义来生成 onclick 属性，避免多余反斜杠在客户端解析时引起致命的意外语法报错
+    '<button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForEdit(\\\'' + p.id + '\\\')" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键添加拉取的模型</button>' +
+    '<button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit(\\\'' + p.id + '\\\')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键批量粘贴</button>' +
+    '<button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForEdit(\\\'' + p.id + '\\\')" title="清空该提供商下的所有模型"><i class="fas fa-trash"></i>一键删除所有模型</button>' +
     '</div></div>' +
     '<div id="ml-' + p.id + '">' +
     p.models.map(function(m, mi) {
+      // 1. 确定模型当前的类别与运行状态（正常、冷却或失效）
       var cat = m.category || detectModelCategory(m.id)
       var isDead = m.status === 'dead'
       var isCooling = !isDead && (m.status === 'cooling' || (m.cooldownUntil && m.cooldownUntil > Date.now()))
-      var badge = '<span class="status-chip status-chip--ok" id="mstatus-' + p.id + '-' + mi + '" title="运行正常">正常</span>'
-      if (isDead) badge = '<span class="status-chip status-chip--err" id="mstatus-' + p.id + '-' + mi + '" title="连续失败已熔断">永久失效</span>'
-      else if (isCooling) badge = '<span class="status-chip status-chip--warn" id="mstatus-' + p.id + '-' + mi + '" title="冷却中">冷却中</span>'
+      
+      // 2. 拼接健康状态指标徽章
+      var badge = '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" id="mstatus-' + p.id + '-' + mi + '" title="运行正常"><i class="fas fa-check-circle" style="color: #146c2e;"></i>正常</span>'
+      if (isDead) {
+        badge = '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #f8b4b4; background: #fdf2f2; color: #9b1c1c; font-weight: 500;" id="mstatus-' + p.id + '-' + mi + '" title="连续失败已熔断"><i class="fas fa-times-circle" style="color: #9b1c1c;"></i>永久失效</span>'
+      } else if (isCooling) {
+        badge = '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #fde047; background: #fef9c3; color: #713f12; font-weight: 500;" id="mstatus-' + p.id + '-' + mi + '" title="冷却中"><i class="fas fa-snowflake" style="color: #713f12;"></i>冷却中</span>'
+      }
 
-      return '<div class="fc mb-3 field-row" data-idx="' + mi + '">' +
-        '<input type="text" value="' + escapeHtml(m.id) + '" class="fx1" id="mid-' + p.id + '-' + mi + '" oninput="markUnsaved()">' +
-        '<select class="select-sm" id="mcat-' + p.id + '-' + mi + '" onchange="changeModelCategory(\\'' + p.id + '\\',\\'' + m.id + '\\',this.value,' + mi + ')" style="width: 82px;" title="模型分类（手动优先）">' +
-        '<option value="text" ' + (cat==='text'?'selected':'') + '>文本</option>' +
-        '<option value="image" ' + (cat==='image'?'selected':'') + '>绘图</option>' +
-        '<option value="multimodal" ' + (cat==='multimodal'?'selected':'') + '>多模态</option>' +
-        '<option value="other" ' + (cat==='other'?'selected':'') + '>其他</option>' +
-        '</select>' +
-        badge +
-        '<button class="btn btn-s btn-sm" id="munblock-' + p.id + '-' + mi + '" style="' + (isDead?'':'display:none;') + '" onclick="unblockModel(\\'' + p.id + '\\',\\'' + m.id + '\\',' + mi + ')" title="解封此模型，清零失败计数器并恢复正常"><i class="fas fa-unlock"></i>解封</button>' +
-        '<label class="tg"><input type="checkbox" ' + (m.enabled?'checked':'') + ' id="men-' + p.id + '-' + mi + '" onchange="markUnsaved()"><span class="sl"></span></label>' +
-        '<button class="icon-btn" onclick="copyRowVal(this)"><i class="far fa-copy"></i></button>' +
-        '<button class="icon-btn" onclick="testMdl(\\'' + p.id + '\\',\\'' + m.id + '\\',' + mi + ')"><i class="fas fa-plug"></i></button>' +
-        '<button class="icon-btn" onclick="rmMdl(\\'' + p.id + '\\',' + mi + ')"><i class="fas fa-times"></i></button>' +
-        '</div>'
+      // 3. 动态检测并判定模型是否在 OpenClaw 适合池内
+      var isOpenClaw = false
+      if (window.stagedTiers && window.stagedTiers.tier2 && window.stagedTiers.tier2.models) {
+        isOpenClaw = window.stagedTiers.tier2.models.some(function(tm) {
+          return tm.providerId === p.id && tm.modelId === m.id
+        })
+      }
+      var clawBadge = isOpenClaw 
+        ? '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #dcd6f7; background: #f3efff; color: #512da8; font-weight: 500;" title="此模型已指派至 OpenClaw 别名池内"><i class="fas fa-robot"></i>OpenClaw 适合</span>'
+        : '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #64748b; font-weight: 500;" title="此模型未进入 OpenClaw 别名池"><i class="fas fa-ban"></i>OpenClaw 不适合</span>'
+
+      // 4. 读取实时延迟探测信息
+      var latencyVal = null
+      if (window.latenciesMap) {
+        var key = p.id + ":" + m.id
+        var stats = window.latenciesMap[key]
+        if (stats) {
+          latencyVal = stats.realLatency || stats.probeLatency
+        }
+      }
+      var latencyBadge = latencyVal 
+        ? '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #c2e7cc; background: #eafcf1; color: #146c2e; font-weight: 500;" title="最新测速延迟"><i class="fas fa-tachometer-alt"></i>' + latencyVal + ' ms</span>'
+        : '<span style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #94a3b8; font-weight: 500;" title="暂无可用测速延迟数据"><i class="fas fa-tachometer-alt"></i>暂无 ms</span>'
+
+      // 5. 拼装返回精致的双行模型卡片 HTML 结构，完美兼容旧的数据采集逻辑
+      // 中文注释：为了彻底杜绝复杂的引号嵌套和转义错误，这里我们改用纯净的客户端 ES6 模板字符串来进行 HTML 结构的输出，保证代码绝对稳定易读。
+      return \`
+<div class="fc mb-4 field-row model-card" data-idx="\${mi}" style="display: flex; flex-direction: column; gap: 12px; background: var(--color-paper, #ffffff); border: 1px solid var(--color-rule-2, #e2e8f0); border-radius: 12px; padding: 14px 16px; align-items: stretch; width: 100%; box-sizing: border-box;">
+  <!-- 第一行：输入、复制、启用开关、单项移除 -->
+  <div class="model-row-header" style="display: flex; align-items: center; gap: 8px; width: 100%;">
+    <!-- 模型ID输入框 -->
+    <input type="text" value="\${escapeHtml(m.id)}" class="fx1 ami" id="mid-\${p.id}-\${mi}" placeholder="模型 ID" oninput="markUnsaved()" style="height: 38px; padding-inline: 12px; border-radius: 8px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper-2, #f8fafc); font-family: var(--font-mono); font-size: 14px;">
+    <!-- 一键复制模型ID按钮 -->
+    <button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="far fa-copy" aria-hidden="true"></i></button>
+    <!-- 模型启用/禁用蓝绿开关 -->
+    <label class="tg" title="启用模型" style="margin: 0; flex-shrink: 0;"><input type="checkbox" \${m.enabled?'checked':''} id="men-\${p.id}-\${mi}" onchange="markUnsaved()"><span class="sl"></span></label>
+    <!-- 移除模型卡片按钮 -->
+    <button class="icon-btn" onclick="rmMdl('\${p.id}',\${mi})" title="移除模型" aria-label="移除模型" style="margin: 0; padding: 6px; color: var(--color-muted); flex-shrink: 0;"><i class="fas fa-times" aria-hidden="true"></i></button>
+  </div>
+  <!-- 第二行：类型下拉、健康度、OpenClaw兼容判定、延迟状态与仪表盘诊断测试 -->
+  <div class="model-row-badges" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%;">
+    <!-- 类别下拉选择框 -->
+    <select class="select-sm" id="mcat-\${p.id}-\${mi}" onchange="changeModelCategory('\${p.id}','\${m.id}',this.value,\${mi})" style="width: 86px; height: 30px; font-size: 12px; border-radius: 6px; padding: 0 6px; border: 1px solid var(--color-rule-2, #cbd5e1); background: var(--color-paper, #fff); margin: 0; outline: none;" title="模型分类（手动优先）">
+      <option value="text" \${cat==='text'?'selected':''}>文本</option>
+      <option value="image" \${cat==='image'?'selected':''}>绘图</option>
+      <option value="multimodal" \${cat==='multimodal'?'selected':''}>多模态</option>
+      <option value="other" \${cat==='other'?'selected':''}>其他</option>
+    </select>
+    <!-- 运行状况指标状态徽章 -->
+    \${badge}
+    <!-- 解封已熔断冷却状态的按钮 -->
+    <button class="btn btn-s btn-sm" id="munblock-\${p.id}-\${mi}" style="\${isDead?'':'display:none;'}" onclick="unblockModel('\${p.id}','\${m.id}',\${mi})" title="解封此模型，清零失败计数器并恢复正常"><i class="fas fa-unlock"></i>解封</button>
+    <!-- OpenClaw 池席位兼容度指示胶囊 -->
+    \${clawBadge}
+    <!-- 延迟表现测速指标胶囊 -->
+    \${latencyBadge}
+    <!-- 一键单测可用性测试按钮 -->
+    <button class="icon-btn" onclick="testMdl('\${p.id}','\${m.id}',\${mi})" title="测试此模型" aria-label="测试此模型" style="margin: 0; padding: 4px 8px; font-size: 12px; height: 28px; border: 1px solid var(--color-rule-2); background: var(--color-paper-2); border-radius: 6px; color: var(--color-muted); display: inline-flex; align-items: center; gap: 4px;"><i class="fas fa-tachometer-alt" aria-hidden="true"></i></button>
+  </div>
+</div>\`
     }).join('') +
     '</div>' +
     '<div class="fc mt-1 field-row">' +
@@ -1705,9 +1853,10 @@ function renderProviderCard(p) {
     '<select id="nmcat-' + p.id + '" class="select-sm" style="width: 82px;" title="新模型分类">' +
     '<option value="auto">自动分类</option><option value="text">文本</option><option value="image">绘图</option><option value="multimodal">多模态</option><option value="other">其他</option>' +
     '</select>' +
-    '<button class="btn btn-s" onclick="addMdl(\\'' + p.id + '\\')"><i class="fas fa-plus"></i>添加</button>' +
+    // 中文注释：使用标准的单引号转义来生成 onclick 属性，避免多余反斜杠在客户端解析时引起致命的意外语法报错
+    '<button class="btn btn-s" onclick="addMdl(\\\'' + p.id + '\\\')"><i class="fas fa-plus"></i>添加</button>' +
     '</div></fieldset>' +
-    '<div class="detail-actions"><div id="tr-' + p.id + '"></div><div><button class="btn btn-d" onclick="del(\\'' + p.id + '\\')"><i class="fas fa-trash"></i>删除</button><button class="btn btn-p" onclick="stageProvChanges(\\'' + p.id + '\\')"><i class="fas fa-check"></i>暂存修改</button></div></div>' +
+    '<div class="detail-actions"><div id="tr-' + p.id + '"></div><div><button class="btn btn-d" onclick="del(\\\'' + p.id + '\\\')"><i class="fas fa-trash"></i>删除</button><button class="btn btn-p" onclick="stageProvChanges(\\\'' + p.id + '\\\')"><i class="fas fa-check"></i>暂存修改</button></div></div>' +
     '</div>'
   plist.prepend(article)
 }
@@ -1770,7 +1919,8 @@ function addKeyRow(id) {
   const d = document.createElement('div')
   d.className = 'fc mb-3 field-row'
   d.dataset.kidx = cnt
-  d.innerHTML = '<input type="text" value="' + k + '" class="fx1" id="k-' + id + '-' + cnt + '" placeholder="API Key"><label class="tg"><input type="checkbox" checked id="ken-' + id + '-' + cnt + '"><span class="sl"></span></label><button class="icon-btn" onclick="copyRowVal(this)" title="复制 Key" aria-label="复制 Key"><i class="far fa-copy"></i></button><button class="icon-btn" onclick="testKeyRow(\\'' + id + '\\',' + cnt + ')" title="测试 Key" aria-label="测试 Key"><i class="fas fa-plug"></i></button><button class="icon-btn" onclick="rmKeyRow(\\'' + id + '\\',' + cnt + ')" title="移除 Key" aria-label="移除 Key"><i class="fas fa-times"></i></button>'
+  // 中文注释：使用标准的单引号转义来生成 onclick 属性，避免多余反斜杠在客户端解析时引起致命的意外语法报错
+  d.innerHTML = '<input type="text" value="' + k + '" class="fx1" id="k-' + id + '-' + cnt + '" placeholder="API Key"><label class="tg"><input type="checkbox" checked id="ken-' + id + '-' + cnt + '"><span class="sl"></span></label><button class="icon-btn" onclick="copyRowVal(this)" title="复制 Key" aria-label="复制 Key"><i class="far fa-copy"></i></button><button class="icon-btn" onclick="testKeyRow(\\\'' + id + '\\\',' + cnt + ')" title="测试 Key" aria-label="测试 Key"><i class="fas fa-plug"></i></button><button class="icon-btn" onclick="rmKeyRow(\\\'' + id + '\\\',' + cnt + ')" title="移除 Key" aria-label="移除 Key"><i class="fas fa-times"></i></button>'
   c.appendChild(d)
   inp.value = ''
   inp.focus()
@@ -1899,19 +2049,21 @@ function addMdlToProvider(providerId, mid, category) {
   var d = document.createElement('div')
   d.className = 'fc mb-3 field-row'
   d.dataset.idx = cnt
-  d.innerHTML = '<input type="text" value="' + escapeHtml(mid) + '" class="fx1" id="mid-' + escapeHtml(providerId) + '-' + cnt + '" placeholder="模型 ID" oninput="markUnsaved()">' +
-    '<select class="select-sm" id="mcat-' + escapeHtml(providerId) + '-' + cnt + '" onchange="changeModelCategory(\\'' + escapeHtml(providerId) + '\\',\\'' + escapeHtml(mid) + '\\',this.value,' + cnt + ')" style="width: 82px;" title="模型分类（手动优先）">' +
-    '<option value="text" ' + (cat === 'text' ? 'selected' : '') + '>文本</option>' +
-    '<option value="image" ' + (cat === 'image' ? 'selected' : '') + '>绘图</option>' +
-    '<option value="multimodal" ' + (cat === 'multimodal' ? 'selected' : '') + '>多模态</option>' +
-    '<option value="other" ' + (cat === 'other' ? 'selected' : '') + '>其他</option>' +
-    '</select>' +
-    '<span class="status-chip status-chip--ok" id="mstatus-' + escapeHtml(providerId) + '-' + cnt + '" title="运行正常">正常</span>' +
-    '<button class="btn btn-s btn-sm" id="munblock-' + escapeHtml(providerId) + '-' + cnt + '" style="display:none;" onclick="unblockModel(\\'' + escapeHtml(providerId) + '\\',\\'' + escapeHtml(mid) + '\\',' + cnt + ')" title="解封此模型"><i class="fas fa-unlock"></i>解封</button>' +
-    '<label class="tg"><input type="checkbox" checked id="men-' + escapeHtml(providerId) + '-' + cnt + '" onchange="markUnsaved()"><span class="sl"></span></label>' +
-    '<button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy"></i></button>' +
-    '<button class="icon-btn" id="tm-' + escapeHtml(providerId) + '-' + cnt + '" title="测试模型" aria-label="测试模型"><i class="fas fa-plug"></i></button>' +
-    '<button class="icon-btn" id="rm-' + escapeHtml(providerId) + '-' + cnt + '" title="移除模型" aria-label="移除模型"><i class="fas fa-times"></i></button>'
+  // 中文注释：为了彻底杜绝复杂的引号嵌套和转义错误，这里我们改用纯净的客户端 ES6 模板字符串来进行 HTML 结构的输出，保证代码绝对稳定易读。
+  d.innerHTML = \`
+<input type="text" value="\${escapeHtml(mid)}" class="fx1" id="mid-\${escapeHtml(providerId)}-\${cnt}" placeholder="模型 ID" oninput="markUnsaved()">
+<select class="select-sm" id="mcat-\${escapeHtml(providerId)}-\${cnt}" onchange="changeModelCategory('\${escapeHtml(providerId)}','\${escapeHtml(mid)}',this.value,\${cnt})" style="width: 82px;" title="模型分类（手动优先）">
+  <option value="text" \${cat === 'text' ? 'selected' : ''}>文本</option>
+  <option value="image" \${cat === 'image' ? 'selected' : ''}>绘图</option>
+  <option value="multimodal" \${cat === 'multimodal' ? 'selected' : ''}>多模态</option>
+  <option value="other" \${cat === 'other' ? 'selected' : ''}>其他</option>
+</select>
+<span class="status-chip status-chip--ok" id="mstatus-\${escapeHtml(providerId)}-\${cnt}" title="运行正常">正常</span>
+<button class="btn btn-s btn-sm" id="munblock-\${escapeHtml(providerId)}-\${cnt}" style="display:none;" onclick="unblockModel('\${escapeHtml(providerId)}','\${escapeHtml(mid)}',\${cnt})" title="解封此模型"><i class="fas fa-unlock"></i>解封</button>
+<label class="tg"><input type="checkbox" checked id="men-\${escapeHtml(providerId)}-\${cnt}" onchange="markUnsaved()"><span class="sl"></span></label>
+<button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy"></i></button>
+<button class="icon-btn" id="tm-\${escapeHtml(providerId)}-\${cnt}" title="测试模型" aria-label="测试模型"><i class="fas fa-plug"></i></button>
+<button class="icon-btn" id="rm-\${escapeHtml(providerId)}-\${cnt}" title="移除模型" aria-label="移除模型"><i class="fas fa-times"></i></button>\`
   c.appendChild(d)
 
   document.getElementById('tm-' + providerId + '-' + cnt).addEventListener('click', function() { testMdl(providerId, mid, cnt) })
@@ -2148,11 +2300,12 @@ function renderProxyKeyCard(k) {
   const maskedKey = k.key.length > 12 ? k.key.substring(0, 8) + '*****' + k.key.substring(k.key.length - 4) : k.key
   article.innerHTML = '<div class="key-main"><span class="key-icon" aria-hidden="true"><i class="fas fa-key"></i></span>' +
     '<div><div class="kv"><span id="kv-' + escapeHtml(k.id) + '" data-full="' + escapeHtml(k.key) + '" data-vis="0">' + escapeHtml(maskedKey) + '</span>' +
-    '<button class="icon-btn" onclick="toggleKeyVis(\\'' + k.id + '\\')" title="显示或隐藏" aria-label="显示或隐藏 Key"><i class="far fa-eye"></i></button>' +
-    '<button class="icon-btn" onclick="copyText(\\'' + escapeHtml(k.key) + '\\',this)" title="复制" aria-label="复制 Key"><i class="far fa-copy"></i></button></div>' +
+    // 中文注释：使用标准的单引号转义来生成 onclick 属性，避免多余反斜杠在客户端解析时引起致命的意外语法报错
+    '<button class="icon-btn" onclick="toggleKeyVis(\\\'' + k.id + '\\\')" title="显示或隐藏" aria-label="显示或隐藏 Key"><i class="far fa-eye"></i></button>' +
+    '<button class="icon-btn" onclick="copyText(\\\'' + escapeHtml(k.key) + '\\\',this)" title="复制" aria-label="复制 Key"><i class="far fa-copy"></i></button></div>' +
     '<div class="key-meta"><h3>' + escapeHtml(k.name) + '</h3><span class="key-meta__sep">-</span><p>创建于 ' + new Date(k.createdAt).toLocaleDateString() + ' · ' + expStr + '</p></div></div></div>' +
-    '<div class="key-actions"><label class="tg"><input type="checkbox" ' + (k.enabled ? 'checked' : '') + ' onchange="toggleProxyKey(\\'' + k.id + '\\',this.checked)" aria-label="启用 ' + escapeHtml(k.name) + '"><span class="sl"></span></label>' +
-    '<span class="bd ' + (k.enabled ? 'bd-on' : 'bd-off') + '">' + (k.enabled ? '已启用' : '已禁用') + '</span><button class="bd bd-del" onclick="rmKey(\\'' + k.id + '\\')"><i class="fas fa-trash"></i>删除</button></div>'
+    '<div class="key-actions"><label class="tg"><input type="checkbox" ' + (k.enabled ? 'checked' : '') + ' onchange="toggleProxyKey(\\\'' + k.id + '\\\',this.checked)" aria-label="启用 ' + escapeHtml(k.name) + '"><span class="sl"></span></label>' +
+    '<span class="bd ' + (k.enabled ? 'bd-on' : 'bd-off') + '">' + (k.enabled ? '已启用' : '已禁用') + '</span><button class="bd bd-del" onclick="rmKey(\\\'' + k.id + '\\\')"><i class="fas fa-trash"></i>删除</button></div>'
   list.appendChild(article)
 }
 
@@ -2313,13 +2466,14 @@ function renderCustomRoutes() {
   container.innerHTML = stagedCustomRoutes.map(function(rule, idx) {
     return '<article class="ki" style="display: flex; flex-direction: column; gap: 8px;" data-id="' + escapeHtml(rule.id) + '">' +
       '<div class="fr" style="gap: 8px; align-items: center; width: 100%;">' +
-        '<div class="fg" style="margin: 0; flex: 1;"><label style="font-size: 11px;">请求别名 (Alias)</label><input type="text" value="' + escapeHtml(rule.alias) + '" placeholder="如: gpt-4o" oninput="updateCustomRoute(' + idx + ',\\\'' + 'alias' + '\\\',this.value)"></div>' +
-        '<div class="fg" style="margin: 0; flex: 1;"><label style="font-size: 11px;">目标模型/梯队池 (Target)</label><input type="text" value="' + escapeHtml(rule.target) + '" placeholder="如: flagship/auto 或 deepseek/deepseek-chat" oninput="updateCustomRoute(' + idx + ',\\\'' + 'target' + '\\\',this.value)"></div>' +
-        '<div class="fg" style="margin: 0; flex: 1.2;"><label style="font-size: 11px;">规则说明 (可选)</label><input type="text" value="' + escapeHtml(rule.description || '') + '" placeholder="如: 官方 gpt-4o 强行映射至第一梯队" oninput="updateCustomRoute(' + idx + ',\\\'' + 'description' + '\\\',this.value)"></div>' +
+        // 中文注释：使用标准的单引号转义来生成 oninput 与 onchange 属性，避免多余反斜杠在客户端解析时引起致命的意外语法报错
+        '<div class="fg" style="margin: 0; flex: 1;"><label style="font-size: 11px;">请求别名 (Alias)</label><input type="text" value="' + escapeHtml(rule.alias) + '" placeholder="如: gpt-4o" oninput="updateCustomRoute(' + idx + ', \\\'alias\\\', this.value)"></div>' +
+        '<div class="fg" style="margin: 0; flex: 1;"><label style="font-size: 11px;">目标模型/梯队池 (Target)</label><input type="text" value="' + escapeHtml(rule.target) + '" placeholder="如: flagship/auto 或 deepseek/deepseek-chat" oninput="updateCustomRoute(' + idx + ', \\\'target\\\', this.value)"></div>' +
+        '<div class="fg" style="margin: 0; flex: 1.2;"><label style="font-size: 11px;">规则说明 (可选)</label><input type="text" value="' + escapeHtml(rule.description || '') + '" placeholder="如: 官方 gpt-4o 强行映射至第一梯队" oninput="updateCustomRoute(' + idx + ', \\\'description\\\', this.value)"></div>' +
       '</div>' +
       '<div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--color-rule); padding-top: 6px; width: 100%;">' +
         '<div class="fc" style="gap: 8px;">' +
-          '<label class="tg"><input type="checkbox" ' + (rule.enabled ? 'checked' : '') + ' onchange="updateCustomRoute(' + idx + ',\\\'' + 'enabled' + '\\\',this.checked)"><span class="sl"></span></label>' +
+          '<label class="tg"><input type="checkbox" ' + (rule.enabled ? 'checked' : '') + ' onchange="updateCustomRoute(' + idx + ', \\\'enabled\\\', this.checked)"><span class="sl"></span></label>' +
           '<span class="bd ' + (rule.enabled ? 'bd-on' : 'bd-off') + '">' + (rule.enabled ? '已启用' : '已禁用') + '</span>' +
         '</div>' +
         '<button class="bd bd-del" type="button" onclick="removeCustomRouteRow(' + idx + ')"><i class="fas fa-trash" aria-hidden="true"></i>删除</button>' +
