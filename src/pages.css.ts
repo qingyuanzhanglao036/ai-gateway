@@ -38,28 +38,28 @@ export const CSS_CONTENT = `
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 
   --space-3xs: .25rem;
-  --space-2xs: .5rem;
-  --space-xs: .75rem;
-  --space-sm: 1rem;
-  --space-md: 1.5rem;
-  --space-lg: 2rem;
-  --space-xl: 3rem;
-  --space-2xl: 4rem;
-  --space-3xl: 6rem;
-  --space-4xl: 8rem;
+  --space-2xs: .375rem;
+  --space-xs: .625rem;
+  --space-sm: .875rem;
+  --space-md: 1.25rem;
+  --space-lg: 1.75rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 3.5rem;
+  --space-3xl: 5rem;
+  --space-4xl: 6.5rem;
 
   --text-xs: .75rem;
-  --text-sm: .875rem;
-  --text-md: 1rem;
-  --text-lg: 1.25rem;
-  --text-xl: 1.75rem;
-  --text-2xl: clamp(2.25rem, 5vw, 4.5rem);
+  --text-sm: .8125rem;
+  --text-md: .9375rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: clamp(1.75rem, 4vw, 2.75rem);
 
   --radius-control: .375rem;
-  --radius-panel: .625rem;
+  --radius-panel: .5rem;
   --radius-round: 999px;
-  --control-h: 2.75rem;
-  --control-h-sm: 2rem;
+  --control-h: 2.125rem;
+  --control-h-sm: 1.75rem;
   --shell: 74rem;
   --ease-out: cubic-bezier(.16, 1, .3, 1);
   --dur-fast: 160ms;
@@ -183,12 +183,12 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
 .fc > .icon-btn + .icon-btn { margin-inline-start: calc(var(--space-3xs) - var(--space-2xs)); }
 
 /* switch */
-.tg { position: relative; display: inline-block; width: 2.5rem; height: var(--control-h); flex: 0 0 2.5rem; margin: 0; }
+.tg { position: relative; display: inline-block; width: 2.375rem; height: var(--control-h); flex: 0 0 2.375rem; margin: 0; }
 .tg input { position: absolute; opacity: 0; width: .0625rem; height: .0625rem; }
-.tg .sl { position: absolute; inset-inline: 0; inset-block-start: .8125rem; height: 1.125rem; border-radius: var(--radius-round); background: var(--color-rule-2); cursor: pointer; transition: background-color var(--dur-fast) ease; }
+.tg .sl { position: absolute; inset-inline: 0; inset-block-start: .5rem; height: 1.125rem; border-radius: var(--radius-round); background: var(--color-rule-2); cursor: pointer; transition: background-color var(--dur-fast) ease; }
 .tg .sl::before { content: ''; position: absolute; width: .75rem; height: .75rem; inset-inline-start: .1875rem; inset-block-start: .1875rem; border-radius: 50%; background: var(--color-paper); box-shadow: 0 .0625rem .125rem var(--color-overlay); transition: transform var(--dur-fast) var(--ease-out); }
 .tg input:checked + .sl { background: var(--color-accent); }
-.tg input:checked + .sl::before { transform: translateX(1.375rem); }
+.tg input:checked + .sl::before { transform: translateX(1.25rem); }
 .tg input:focus-visible + .sl { outline: .125rem solid var(--color-focus); outline-offset: .125rem; }
 .tg input:disabled + .sl { opacity: .55; cursor: not-allowed; }
 

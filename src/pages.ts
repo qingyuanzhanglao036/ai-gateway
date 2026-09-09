@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.33
+ * 版本号: v1.0.35
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -846,17 +846,29 @@ ${H('管理')}
           <div id="af" class="hd add-form-panel">
             <div class="panel-heading"><div><span class="panel-heading__mark"><i class="fas fa-plus" aria-hidden="true"></i></span><div><h3>添加新提供商</h3><p>先配置基本信息与 API Key，再通过一键拉取或导入模型进行快速指派。</p></div></div><button class="icon-btn" type="button" onclick="hideAdd()" aria-label="关闭添加表单"><i class="fas fa-times" aria-hidden="true"></i></button></div>
             
-            <!-- 1. 提供商基础信息：采用左右 2 列高级对称格栅 -->
+            <!-- 1. 提供商基础信息：采用左右 2 列高级对称格栅（四格完全横平竖直对齐） -->
             <div class="grid-2-gap6" style="margin-bottom: var(--space-xs);">
-              <!-- 基础信息 - 左列：名称 -->
-              <div>
-                <div class="fg" style="margin-bottom: var(--space-xs);"><label for="anm">名称</label><input type="text" id="anm" placeholder="DeepSeek" style="width: 100%;"></div>
-                <div class="fg"><label for="aurl">API 地址</label><input type="url" id="aurl" placeholder="https://api.deepseek.com" style="width: 100%;"></div>
+              <div class="fg" style="margin-bottom: var(--space-xs);">
+                <label for="anm">名称</label>
+                <input type="text" id="anm" placeholder="DeepSeek" style="width: 100%;">
               </div>
-              <!-- 基础信息 - 右列：唯一标识符 -->
-              <div>
-                <div class="fg" style="margin-bottom: var(--space-xs);"><label for="aid">提供商 ID</label><input type="text" id="aid" placeholder="deepseek" style="width: 100%;"><span class="form-helper">用于模型前缀，创建后不可修改。</span></div>
-                <div class="fg"><label for="afmt">API 格式</label><select id="afmt" class="select-sm" style="height: 40px; width: 100%;"><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic 兼容</option></select></div>
+              <div class="fg" style="margin-bottom: var(--space-xs);">
+                <label for="aid" style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <span>提供商 ID</span>
+                  <span style="font-size: 11px; color: var(--color-muted); font-weight: normal;">创建后不可修改</span>
+                </label>
+                <input type="text" id="aid" placeholder="deepseek" style="width: 100%;">
+              </div>
+              <div class="fg" style="margin-bottom: var(--space-xs);">
+                <label for="aurl">API 地址</label>
+                <input type="url" id="aurl" placeholder="https://api.deepseek.com" style="width: 100%;">
+              </div>
+              <div class="fg" style="margin-bottom: var(--space-xs);">
+                <label for="afmt">API 格式</label>
+                <select id="afmt" class="select-sm" style="width: 100%;">
+                  <option value="openai">OpenAI 兼容</option>
+                  <option value="anthropic">Anthropic 兼容</option>
+                </select>
               </div>
             </div>
 
@@ -878,14 +890,26 @@ ${H('管理')}
             <!-- 3. 模型配置与智能拉取列表：完整放置于最下方且 100% 通宽，给模型编辑提供最宽裕的空间 -->
             <div style="margin-bottom: var(--space-md); position: relative; width: 100%;">
               <!-- 智能拉取的上游可用模型清单弹窗浮层 -->
-              <aside id="amc" class="hd mdl-list-panel"><div class="panel-heading"><div><span class="panel-heading__mark"><i class="fas fa-cube" aria-hidden="true"></i></span><div><h3>可用模型</h3><p>点击“+”添加到配置。</p></div></div><button class="icon-btn" type="button" onclick="hideMdlPanel('amc')" title="关闭可用模型" aria-label="关闭可用模型"><i class="fas fa-times" aria-hidden="true"></i></button></div><div id="amcl"></div></aside>
+              <aside id="amc" class="hd mdl-list-panel">
+                <div class="panel-heading">
+                  <div>
+                    <span class="panel-heading__mark"><i class="fas fa-cube" aria-hidden="true"></i></span>
+                    <div><h3>可用模型</h3><p>点击“+”单独添加，或点击右侧一键全量导入。</p></div>
+                  </div>
+                  <div class="fc" style="gap: 6px;">
+                    <button class="btn btn-p btn-sm" type="button" onclick="importAllPulledModels('amc','')" title="一键导入所有拉取的可用模型到表单"><i class="fas fa-download"></i>一键导入拉取的模型</button>
+                    <button class="icon-btn" type="button" onclick="hideMdlPanel('amc')" title="关闭可用模型" aria-label="关闭可用模型"><i class="fas fa-times" aria-hidden="true"></i></button>
+                  </div>
+                </div>
+                <div id="amcl"></div>
+              </aside>
               <fieldset class="form-group">
                 <!-- 自适应模型列表头部工具栏：支持小屏/移动端整齐换行，绝不溢出卡片 -->
                 <div class="models-header-bar">
                   <legend style="margin-bottom: 0;">模型列表</legend>
                   <!-- 批量/拉取等管理功能栏：弹性折行布局 -->
                   <div class="models-toolbar">
-                    <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForAdd()" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>添加拉取模型</button>
+                    <button type="button" class="btn btn-p btn-sm" onclick="fetchUpstreamModelsForAdd()" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键导入拉取的模型</button>
                     <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForAdd()" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>批量粘贴</button>
                     <button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForAdd()" title="清空全部模型"><i class="fas fa-trash"></i>清空所有模型</button>
                   </div>
@@ -916,18 +940,20 @@ ${H('管理')}
                     </div>
                   </div>
                 </div>
-                <!-- 手动添加新模型快捷栏：自适应防截断 -->
-                <div class="add-model-bar">
-                  <input type="text" id="anew-mid" placeholder="新的模型 ID" class="add-model-input">
-                  <div class="add-model-controls">
-                    <select id="anew-mcat" class="add-model-select" title="新模型分类">
-                      <option value="auto">自动分类</option>
-                      <option value="text">文本</option>
-                      <option value="image">绘图</option>
-                      <option value="multimodal">多模态</option>
-                      <option value="other">其他</option>
-                    </select>
-                    <button class="btn btn-s add-model-btn" type="button" onclick="addMdlRow()"><i class="fas fa-plus"></i>添加模型</button>
+                <!-- 手动添加新模型快捷栏：严格包裹自适应对齐防截断 -->
+                <div class="add-model-bar-wrap">
+                  <div class="add-model-bar">
+                    <input type="text" id="anew-mid" placeholder="新的模型 ID" class="add-model-input">
+                    <div class="add-model-controls">
+                      <select id="anew-mcat" class="add-model-select" title="新模型分类">
+                        <option value="auto">自动分类</option>
+                        <option value="text">文本</option>
+                        <option value="image">绘图</option>
+                        <option value="multimodal">多模态</option>
+                        <option value="other">其他</option>
+                      </select>
+                      <button class="btn btn-s add-model-btn" type="button" onclick="addMdlRow()"><i class="fas fa-plus"></i>添加模型</button>
+                    </div>
                   </div>
                 </div>
               </fieldset>
@@ -956,7 +982,7 @@ ${H('管理')}
                   <legend style="margin-bottom: 0;">模型列表 (${p.models.length})</legend>
                   <!-- 批量/拉取等管理功能栏：弹性折行布局 -->
                   <div class="models-toolbar">
-                    <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForEdit('${p.id}')" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>添加拉取模型</button>
+                    <button type="button" class="btn btn-p btn-sm" onclick="fetchUpstreamModelsForEdit('${p.id}')" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键导入拉取的模型</button>
                     <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit('${p.id}')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>批量粘贴</button>
                     <button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForEdit('${p.id}')" title="清空该提供商下的所有模型"><i class="fas fa-trash"></i>清空所有模型</button>
                   </div>
@@ -1527,7 +1553,7 @@ function importAllPulledModels(panelId, providerId) {
 function modelPanelHeading(panelId, providerId) {
   var pId = providerId || ''
   // 使用三重反斜杠安全转义传参，避免浏览器解析为非法字符串语法错误
-  var importBtn = '<button class="btn btn-s btn-sm" type="button" onclick="importAllPulledModels(\\\'' + panelId + '\\\',\\\'' + pId + '\\\')" title="一键将已拉取出的模型全量添加并自动识别分类"><i class="fas fa-file-import"></i> 一键添加已拉取模型</button>'
+  var importBtn = '<button class="btn btn-p btn-sm" type="button" onclick="importAllPulledModels(\\\'' + panelId + '\\\',\\\'' + pId + '\\\')" title="一键将已拉取出的模型全量导入并自动识别分类"><i class="fas fa-download"></i> 一键导入拉取的模型</button>'
   return '<div class="panel-heading"><div>' +
     '<span class="panel-heading__mark"><i class="fas fa-cube" aria-hidden="true"></i></span>' +
     '<div><h3>可用模型</h3><p>点击“+”单条添加，或点击一键添加所有拉取出的模型。</p></div></div>' +
@@ -1782,13 +1808,13 @@ function renderProviderCard(p) {
     }).join('') +
     '</div><div class="fc mt-1 field-row"><input type="text" id="nk-' + p.id + '" placeholder="新的 API Key" class="fx1"><button class="btn btn-s" onclick="addKeyRow(\\\'' + p.id + '\\\')"><i class="fas fa-plus"></i>添加</button></div></fieldset>' +
     '<fieldset class="form-group">' +
-    '<div class="fc justify-between mb-2" style="flex-wrap: wrap; gap: 8px;">' +
+    '<div class="models-header-bar">' +
     '<legend style="margin-bottom: 0;">模型列表 (' + p.models.length + ')</legend>' +
-    '<div class="fc" style="gap: 6px;">' +
+    '<div class="models-toolbar">' +
     // 中文注释：使用标准的单引号转义来生成 onclick 属性，避免多余反斜杠在客户端解析时引起致命的意外语法报错
-    '<button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForEdit(\\\'' + p.id + '\\\')" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键添加拉取的模型</button>' +
-    '<button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit(\\\'' + p.id + '\\\')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键批量粘贴</button>' +
-    '<button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForEdit(\\\'' + p.id + '\\\')" title="清空该提供商下的所有模型"><i class="fas fa-trash"></i>一键删除所有模型</button>' +
+    '<button type="button" class="btn btn-p btn-sm" onclick="fetchUpstreamModelsForEdit(\\\'' + p.id + '\\\')" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键导入拉取的模型</button>' +
+    '<button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit(\\\'' + p.id + '\\\')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>批量粘贴</button>' +
+    '<button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForEdit(\\\'' + p.id + '\\\')" title="清空该提供商下的所有模型"><i class="fas fa-trash"></i>清空所有模型</button>' +
     '</div></div>' +
     '<div id="ml-' + p.id + '">' +
     p.models.map(function(m, mi) {
@@ -1858,14 +1884,16 @@ function renderProviderCard(p) {
 </div>\`
     }).join('') +
     '</div>' +
-    '<div class="fc mt-1 field-row">' +
-    '<input type="text" id="nmid-' + p.id + '" placeholder="新的模型 ID" class="fx1">' +
-    '<select id="nmcat-' + p.id + '" class="select-sm" style="width: 82px;" title="新模型分类">' +
+    '<!-- 手动添加新模型快捷栏：自适应防截断 -->' +
+    '<div class="add-model-bar">' +
+    '<input type="text" id="nmid-' + p.id + '" placeholder="新的模型 ID" class="add-model-input">' +
+    '<div class="add-model-controls">' +
+    '<select id="nmcat-' + p.id + '" class="add-model-select" title="新模型分类">' +
     '<option value="auto">自动分类</option><option value="text">文本</option><option value="image">绘图</option><option value="multimodal">多模态</option><option value="other">其他</option>' +
     '</select>' +
     // 中文注释：使用标准的单引号转义来生成 onclick 属性，避免多余反斜杠在客户端解析时引起致命的意外语法报错
-    '<button class="btn btn-s" onclick="addMdl(\\\'' + p.id + '\\\')"><i class="fas fa-plus"></i>添加</button>' +
-    '</div></fieldset>' +
+    '<button class="btn btn-s add-model-btn" onclick="addMdl(\\\'' + p.id + '\\\')"><i class="fas fa-plus"></i>添加模型</button>' +
+    '</div></div></fieldset>' +
     '<div class="detail-actions"><div id="tr-' + p.id + '"></div><div><button class="btn btn-d" onclick="del(\\\'' + p.id + '\\\')"><i class="fas fa-trash"></i>删除</button><button class="btn btn-p" onclick="stageProvChanges(\\\'' + p.id + '\\\')"><i class="fas fa-check"></i>暂存修改</button></div></div>' +
     '</div>'
   plist.prepend(article)
