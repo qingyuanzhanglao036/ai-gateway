@@ -1,9 +1,9 @@
 /**
- * 版本号: v1.0.14
+ * 版本号: v1.0.15
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
-import { getProviders, getProxyKeys, getTierConfig, getCustomRoutes } from './storage'
+import { getProviders, getProxyKeys, getTierConfig, getCustomRoutes, getTierModelLatencies } from './storage'
 import { SITE_CONFIG, OPENCODE_DEFAULT_URL, DEFAULT_TIER_CONFIG } from './config'
 import type { Env, ModelCategory, TierConfig, TierPoolConfig } from './types'
 import { detectModelCategory } from './types'
@@ -46,6 +46,9 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
   // 辅助查找模型与供应商信息
   const provMap = new Map(providers.map(p => [p.id, p]))
 
+  // 顺风车并行查询三大梯队当前模型双延迟数据（探测延迟与真实用户数据延迟）
+  const latenciesMap = await getTierModelLatencies(c.env, tierConfig)
+
   // 渲染单个梯队卡片列表
   const renderTierPoolSection = (tier: TierPoolConfig, icon: string, badgeLabel: string) => {
     const list = tier.models || []
@@ -70,11 +73,26 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
           else if (cat === 'other') catBadge = `<span class="cat-chip cat-chip--other"><i class="fas fa-cube"></i>其他</span>`
 
           const fullId = `${item.providerId}/${item.modelId}`
+          
+          // 获取双指标延迟
+          const key = `${item.providerId}:${item.modelId}`
+          const latStats = latenciesMap[key] || { probeLatency: null, realLatency: null }
+          const probeMs = latStats.probeLatency
+          const realMs = latStats.realLatency
+
           return `<div class="tier-model-item">
             <div class="tier-model-item__info">
               <span class="tier-model-item__prov">${escapePageHtml(pName)}</span>
               <strong>${escapePageHtml(item.modelId)}</strong>
               ${catBadge}
+              <div class="tier-model-latencies">
+                <span class="latency-badge ${probeMs ? 'latency-badge--probe' : 'latency-badge--none'}" title="最近一次定时自动巡检海选探测延迟">
+                  <i class="fas fa-bolt"></i> 探测: ${probeMs ? `${probeMs}ms` : '未探测'}
+                </span>
+                <span class="latency-badge ${realMs ? 'latency-badge--real' : 'latency-badge--none'}" title="最近 50 次真实用户调用加权平均延迟">
+                  <i class="fas fa-chart-bar"></i> 真实: ${realMs ? `${realMs}ms` : '无数据'}
+                </span>
+              </div>
             </div>
             <button class="icon-btn copy-control" data-copy="${escapePageHtml(fullId)}" type="button" title="复制调用名" aria-label="复制模型名">
               <i class="far fa-copy"></i>
@@ -130,7 +148,7 @@ ${H('首页')}
 <main>
   <section class="shell home-hero" aria-labelledby="home-title">
     <div class="home-hero__copy">
-      <p class="eyebrow"><span aria-hidden="true"></span>UNIFIED AI GATEWAY <span style="font-weight:600; color:var(--color-brand, #2563eb); margin-left:6px;">(${SITE_CONFIG.version})</span></p>
+      <p class="eyebrow"><span aria-hidden="true"></span>UNIFIED AI GATEWAY</p>
       <h1 id="home-title">一个 API，调用已配置的所有模型。</h1>
       <p class="home-hero__lede">统一的 OpenAI / Anthropic 兼容入口。模型按提供商归档，转发 Key、启用状态和故障转移集中管理。</p>
       <div class="endpoint-box" aria-label="API 接入地址">
@@ -604,21 +622,31 @@ ${H('管理')}
 
         <div class="af-w">
           <div id="af" class="hd add-form-panel">
-            <div class="panel-heading"><div><span class="panel-heading__mark"><i class="fas fa-plus" aria-hidden="true"></i></span><div><h3>添加新提供商</h3><p>先配置基本信息，再测试 Key 与模型连接。</p></div></div><button class="icon-btn" type="button" onclick="hideAdd()" aria-label="关闭添加表单"><i class="fas fa-times" aria-hidden="true"></i></button></div>
+            <div class="panel-heading"><div><span class="panel-heading__mark"><i class="fas fa-plus" aria-hidden="true"></i></span><div><h3>添加新提供商</h3><p>先配置基本信息与 API Key，再通过一键拉取或导入模型进行快速指派。</p></div></div><button class="icon-btn" type="button" onclick="hideAdd()" aria-label="关闭添加表单"><i class="fas fa-times" aria-hidden="true"></i></button></div>
+            
+            <div class="grid-2-gap6" style="margin-bottom: var(--space-md);">
+              <!-- 左侧一列：基础配置与 Key 列表 -->
+              <div>
             <div class="fr">
               <div class="fg"><label for="anm">名称</label><input type="text" id="anm" placeholder="DeepSeek"></div>
               <div class="fg"><label for="aid">提供商 ID</label><input type="text" id="aid" placeholder="deepseek"><span class="form-helper">用于模型前缀，创建后不可修改。</span></div>
             </div>
-            <div class="fg"><label for="aurl">API 地址</label><input type="url" id="aurl" placeholder="https://api.deepseek.com"></div>
-            <div class="fg"><label for="afmt">API 格式</label><select id="afmt" class="select-sm"><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic 兼容</option></select></div>
+            <div class="fr" style="gap: 12px; margin-bottom: var(--space-sm);">
+              <div class="fg" style="margin: 0; flex: 2;"><label for="aurl">API 地址</label><input type="url" id="aurl" placeholder="https://api.deepseek.com"></div>
+              <div class="fg" style="margin: 0; flex: 1;"><label for="afmt">API 格式</label><select id="afmt" class="select-sm" style="height: 40px;"><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic 兼容</option></select></div>
+            </div>
             <fieldset class="form-group"><legend>上游 API Keys</legend><div id="akeys"><div class="fc mb-4 field-row"><input type="text" placeholder="sk-xxx" class="fx1 aki" aria-label="上游 API Key"><label class="tg" title="启用 Key"><input type="checkbox" checked class="ake" aria-label="启用 Key"><span class="sl"></span></label><button class="icon-btn" onclick="copyRowVal(this)" title="复制 Key" aria-label="复制 Key"><i class="far fa-copy" aria-hidden="true"></i></button><button class="icon-btn" onclick="testNewAKey(this)" title="测试 Key" aria-label="测试 Key"><i class="fas fa-plug" aria-hidden="true"></i></button><button class="icon-btn" onclick="this.parentElement.remove()" title="移除 Key" aria-label="移除 Key"><i class="fas fa-times" aria-hidden="true"></i></button></div></div><button class="btn btn-s" onclick="addAKeyRow()"><i class="fas fa-plus" aria-hidden="true"></i>添加 Key</button></fieldset>
+              </div>
+
+              <!-- 右侧一列：智能拉取与模型清单 -->
+              <div>
             <aside id="amc" class="hd mdl-list-panel"><div class="panel-heading"><div><span class="panel-heading__mark"><i class="fas fa-cube" aria-hidden="true"></i></span><div><h3>可用模型</h3><p>点击“+”添加到配置。</p></div></div><button class="icon-btn" type="button" onclick="hideMdlPanel('amc')" title="关闭可用模型" aria-label="关闭可用模型"><i class="fas fa-times" aria-hidden="true"></i></button></div><div id="amcl"></div></aside>
             <fieldset class="form-group">
               <div class="fc justify-between mb-2" style="flex-wrap: wrap; gap: 8px;">
                 <legend style="margin-bottom: 0;">模型列表</legend>
                 <div class="fc" style="gap: 6px;">
-                  <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForAdd()" title="拉取上游端点返回的模型"><i class="fas fa-download"></i>一键拉取上游模型</button>
-                  <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForAdd()" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键导入</button>
+                  <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForAdd()" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键添加拉取的模型</button>
+                  <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForAdd()" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键批量粘贴</button>
                   <button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForAdd()" title="清空全部模型"><i class="fas fa-trash"></i>一键删除所有模型</button>
                 </div>
               </div>
@@ -650,6 +678,8 @@ ${H('管理')}
                 <button class="btn btn-s" type="button" onclick="addMdlRow()"><i class="fas fa-plus"></i>添加模型</button>
               </div>
             </fieldset>
+              </div> <!-- 闭合右侧列 -->
+            </div> <!-- 闭合 grid-2-gap6 容器 -->
             <div class="panel-actions"><label class="switch-label"><span>创建后立即启用</span><span class="tg"><input type="checkbox" checked id="aen"><span class="sl"></span></span></label><div><button class="btn btn-s" onclick="hideAdd()">取消</button><button class="btn btn-p" onclick="stageNewProv()"><i class="fas fa-plus" aria-hidden="true"></i>暂存提供商</button></div></div>
             <div id="atestR" class="mt-1" aria-live="polite"></div>
           </div>
@@ -672,8 +702,8 @@ ${H('管理')}
                 <div class="fc justify-between mb-2" style="flex-wrap: wrap; gap: 8px;">
                   <legend style="margin-bottom: 0;">模型列表 (${p.models.length})</legend>
                   <div class="fc" style="gap: 6px;">
-                    <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForEdit('${p.id}')" title="拉取上游端点返回的模型"><i class="fas fa-download"></i>一键拉取上游模型</button>
-                    <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit('${p.id}')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键导入</button>
+                    <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForEdit('${p.id}')" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键添加拉取的模型</button>
+                    <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit('${p.id}')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键批量粘贴</button>
                     <button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForEdit('${p.id}')" title="清空该提供商下的所有模型"><i class="fas fa-trash"></i>一键删除所有模型</button>
                   </div>
                 </div>
@@ -1384,8 +1414,8 @@ function renderProviderCard(p) {
     '<div class="fc justify-between mb-2" style="flex-wrap: wrap; gap: 8px;">' +
     '<legend style="margin-bottom: 0;">模型列表 (' + p.models.length + ')</legend>' +
     '<div class="fc" style="gap: 6px;">' +
-    '<button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForEdit(\\'' + p.id + '\\')" title="拉取上游端点返回的模型"><i class="fas fa-download"></i>一键拉取上游模型</button>' +
-    '<button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit(\\'' + p.id + '\\')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键导入</button>' +
+    '<button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForEdit(\\'' + p.id + '\\')" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键添加拉取的模型</button>' +
+    '<button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForEdit(\\'' + p.id + '\\')" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键批量粘贴</button>' +
     '<button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForEdit(\\'' + p.id + '\\')" title="清空该提供商下的所有模型"><i class="fas fa-trash"></i>一键删除所有模型</button>' +
     '</div></div>' +
     '<div id="ml-' + p.id + '">' +

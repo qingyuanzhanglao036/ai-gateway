@@ -558,9 +558,21 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
 .tier-pool-box__alias { font-family: var(--font-mono); font-size: .75rem; color: var(--color-accent); background: var(--color-accent-soft); padding: 2px 6px; border-radius: 4px; display: inline-block; margin-block-start: 2px; }
 .tier-seat-badge { font-family: var(--font-mono); font-size: .75rem; font-weight: 600; padding: 3px 8px; border-radius: var(--radius-round); background: var(--color-paper-2); border: 1px solid var(--color-rule); }
 .tier-seat-badge--full { background: oklch(92% 0.12 85); color: oklch(35% 0.1 75); }
-.tier-model-list { display: flex; flex-direction: column; gap: 6px; min-height: 80px; }
-.tier-model-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: var(--radius-control); font-size: .8125rem; }
-.tier-model-item__info { display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.tier-model-item__prov { font-size: .6875rem; color: var(--color-muted); background: var(--color-paper-3); padding: 1px 4px; border-radius: 3px; }
+.tier-model-list { display: flex; flex-direction: column; gap: 8px; min-height: 80px; }
+.tier-model-item { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: var(--radius-control); font-size: .8125rem; }
+@media (min-width: 32rem) {
+  .tier-model-item { flex-direction: row; align-items: center; justify-content: space-between; }
+}
+.tier-model-item__info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; min-width: 0; word-break: break-all; white-space: normal; }
+.tier-model-item__info strong { font-family: var(--font-mono); font-weight: 600; color: var(--color-ink); word-break: break-all; }
+.tier-model-item__prov { font-size: .6875rem; color: var(--color-muted); background: var(--color-paper-3); padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+
+/* 双延迟指标指示器：海选定时探测延迟 与 真实用户调用平均延迟 */
+.tier-model-latencies { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-block-start: 2px; }
+.latency-badge { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: .6875rem; font-weight: 500; padding: 1px 6px; border-radius: 4px; white-space: nowrap; border: .0625rem solid transparent; }
+.latency-badge--probe { background: oklch(96% 0.015 85); color: oklch(50% 0.12 85); border-color: oklch(90% 0.030 85); }
+.latency-badge--real { background: var(--color-accent-soft); color: var(--color-focus); border-color: oklch(88% 0.020 256); }
+.latency-badge--none { background: var(--color-paper-3); color: var(--color-muted); border-color: var(--color-rule); }
+
 .tier-pool-form { display: flex; gap: 6px; align-items: center; margin-block-start: auto; padding-block-start: var(--space-xs); border-block-start: 1px dashed var(--color-rule); }
 `

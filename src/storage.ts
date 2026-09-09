@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.12
+ * 版本号: v1.0.16
  * 模块: 数据持久化层（KV 存储读写与顺风车打包）
  */
 import {
@@ -197,6 +197,67 @@ export async function getTierConfig(env: Env): Promise<TierConfig> {
 // 将三大梯队配置一次性持久化至 KV
 export async function setTierConfig(env: Env, config: TierConfig): Promise<void> {
   await env.KV.put(KV_KEYS.TIERS, JSON.stringify(config))
+}
+
+/**
+ * 顺风车批量查询梯队模型双延迟数据（海选探测延迟 + 真实调用平均延迟）
+ * 严格遵循 Cloudflare KV 免费配额控制：只读不写
+ */
+export async function getTierModelLatencies(
+  env: Env,
+  tierConfig: TierConfig
+): Promise<Record<string, { probeLatency: number | null; realLatency: number | null }>> {
+  const result: Record<string, { probeLatency: number | null; realLatency: number | null }> = {}
+
+  // 1. 读取海选探测日志列表（仅需 1 次 KV 读取）
+  const auditionLogs = await getProbeLogs(env, 'audition')
+  const probeMap = new Map<string, number>()
+  for (const log of auditionLogs) {
+    if (log.success && typeof log.latencyMs === 'number') {
+      const key = `${log.providerId}:${log.modelId}`
+      if (!probeMap.has(key)) {
+        probeMap.set(key, log.latencyMs)
+      }
+    }
+  }
+
+  // 2. 汇总三大梯队当前在席的所有模型标识 (providerId:modelId)
+  const modelKeys = new Set<string>()
+  const tiers = [tierConfig.tier1, tierConfig.tier2, tierConfig.tier3]
+  for (const tier of tiers) {
+    if (tier && Array.isArray(tier.models)) {
+      for (const m of tier.models) {
+        modelKeys.add(`${m.providerId}:${m.modelId}`)
+      }
+    }
+  }
+
+  // 3. 并行并发读取真实业务延迟统计（搭顺风车读，不产生 KV 写入）
+  await Promise.all(
+    Array.from(modelKeys).map(async (key) => {
+      const parts = key.split(':')
+      const providerId = parts[0]
+      const modelId = parts.slice(1).join(':')
+      const probeLat = probeMap.has(key) ? probeMap.get(key)! : null
+      let realLat: number | null = null
+
+      try {
+        const stats = await getModelBusinessLatency(env, providerId, modelId)
+        if (stats && stats.averageLatencyMs > 0) {
+          realLat = stats.averageLatencyMs
+        }
+      } catch {
+        /* 错误静默降级，不阻断页面渲染 */
+      }
+
+      result[key] = {
+        probeLatency: probeLat,
+        realLatency: realLat,
+      }
+    })
+  )
+
+  return result
 }
 
 // ===== 自定义路由规则 CRUD =====
