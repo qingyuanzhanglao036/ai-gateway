@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.18
+ * 版本号: v1.0.19
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -845,62 +845,80 @@ ${H('管理')}
           <div id="af" class="hd add-form-panel">
             <div class="panel-heading"><div><span class="panel-heading__mark"><i class="fas fa-plus" aria-hidden="true"></i></span><div><h3>添加新提供商</h3><p>先配置基本信息与 API Key，再通过一键拉取或导入模型进行快速指派。</p></div></div><button class="icon-btn" type="button" onclick="hideAdd()" aria-label="关闭添加表单"><i class="fas fa-times" aria-hidden="true"></i></button></div>
             
-            <div class="grid-2-gap6" style="margin-bottom: var(--space-md);">
-              <!-- 左侧一列：基础配置与 Key 列表 -->
+            <!-- 1. 提供商基础信息：采用左右 2 列高级对称格栅 -->
+            <div class="grid-2-gap6" style="margin-bottom: var(--space-xs);">
+              <!-- 基础信息 - 左列：名称 -->
               <div>
-            <div class="fr">
-              <div class="fg"><label for="anm">名称</label><input type="text" id="anm" placeholder="DeepSeek"></div>
-              <div class="fg"><label for="aid">提供商 ID</label><input type="text" id="aid" placeholder="deepseek"><span class="form-helper">用于模型前缀，创建后不可修改。</span></div>
-            </div>
-            <div class="fr" style="gap: 12px; margin-bottom: var(--space-sm);">
-              <div class="fg" style="margin: 0; flex: 2;"><label for="aurl">API 地址</label><input type="url" id="aurl" placeholder="https://api.deepseek.com"></div>
-              <div class="fg" style="margin: 0; flex: 1;"><label for="afmt">API 格式</label><select id="afmt" class="select-sm" style="height: 40px;"><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic 兼容</option></select></div>
-            </div>
-            <fieldset class="form-group"><legend>上游 API Keys</legend><div id="akeys"><div class="fc mb-4 field-row"><input type="text" placeholder="sk-xxx" class="fx1 aki" aria-label="上游 API Key"><label class="tg" title="启用 Key"><input type="checkbox" checked class="ake" aria-label="启用 Key"><span class="sl"></span></label><button class="icon-btn" onclick="copyRowVal(this)" title="复制 Key" aria-label="复制 Key"><i class="far fa-copy" aria-hidden="true"></i></button><button class="icon-btn" onclick="testNewAKey(this)" title="测试 Key" aria-label="测试 Key"><i class="fas fa-plug" aria-hidden="true"></i></button><button class="icon-btn" onclick="this.parentElement.remove()" title="移除 Key" aria-label="移除 Key"><i class="fas fa-times" aria-hidden="true"></i></button></div></div><button class="btn btn-s" onclick="addAKeyRow()"><i class="fas fa-plus" aria-hidden="true"></i>添加 Key</button></fieldset>
+                <div class="fg" style="margin-bottom: var(--space-xs);"><label for="anm">名称</label><input type="text" id="anm" placeholder="DeepSeek" style="width: 100%;"></div>
+                <div class="fg"><label for="aurl">API 地址</label><input type="url" id="aurl" placeholder="https://api.deepseek.com" style="width: 100%;"></div>
               </div>
-
-              <!-- 右侧一列：智能拉取与模型清单 -->
+              <!-- 基础信息 - 右列：唯一标识符 -->
               <div>
-            <aside id="amc" class="hd mdl-list-panel"><div class="panel-heading"><div><span class="panel-heading__mark"><i class="fas fa-cube" aria-hidden="true"></i></span><div><h3>可用模型</h3><p>点击“+”添加到配置。</p></div></div><button class="icon-btn" type="button" onclick="hideMdlPanel('amc')" title="关闭可用模型" aria-label="关闭可用模型"><i class="fas fa-times" aria-hidden="true"></i></button></div><div id="amcl"></div></aside>
-            <fieldset class="form-group">
-              <div class="fc justify-between mb-2" style="flex-wrap: wrap; gap: 8px;">
-                <legend style="margin-bottom: 0;">模型列表</legend>
-                <div class="fc" style="gap: 6px;">
-                  <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForAdd()" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键添加拉取的模型</button>
-                  <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForAdd()" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键批量粘贴</button>
-                  <button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForAdd()" title="清空全部模型"><i class="fas fa-trash"></i>一键删除所有模型</button>
+                <div class="fg" style="margin-bottom: var(--space-xs);"><label for="aid">提供商 ID</label><input type="text" id="aid" placeholder="deepseek" style="width: 100%;"><span class="form-helper">用于模型前缀，创建后不可修改。</span></div>
+                <div class="fg"><label for="afmt">API 格式</label><select id="afmt" class="select-sm" style="height: 40px; width: 100%;"><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic 兼容</option></select></div>
+              </div>
+            </div>
+
+            <!-- 2. 上游 API Keys 区域：独占一行通宽，便于录入、复制和测试 -->
+            <fieldset class="form-group" style="margin-bottom: var(--space-md); width: 100%;">
+              <legend>上游 API Keys</legend>
+              <div id="akeys">
+                <div class="fc mb-4 field-row">
+                  <input type="text" placeholder="sk-xxx" class="fx1 aki" aria-label="上游 API Key">
+                  <label class="tg" title="启用 Key"><input type="checkbox" checked class="ake" aria-label="启用 Key"><span class="sl"></span></label>
+                  <button class="icon-btn" onclick="copyRowVal(this)" title="复制 Key" aria-label="复制 Key"><i class="far fa-copy" aria-hidden="true"></i></button>
+                  <button class="icon-btn" onclick="testNewAKey(this)" title="测试 Key" aria-label="测试 Key"><i class="fas fa-plug" aria-hidden="true"></i></button>
+                  <button class="icon-btn" onclick="this.parentElement.remove()" title="移除 Key" aria-label="移除 Key"><i class="fas fa-times" aria-hidden="true"></i></button>
                 </div>
               </div>
-              <div id="amodels">
-                <div class="fc mb-4 field-row">
-                  <input type="text" placeholder="deepseek-chat" class="fx1 ami" aria-label="模型 ID">
-                  <select class="select-sm amcat" style="width: 82px;" title="模型分类">
-                    <option value="auto">自动识别</option>
+              <button class="btn btn-s" onclick="addAKeyRow()"><i class="fas fa-plus" aria-hidden="true"></i>添加 Key</button>
+            </fieldset>
+
+            <!-- 3. 模型配置与智能拉取列表：完整放置于最下方且 100% 通宽，给模型编辑提供最宽裕的空间 -->
+            <div style="margin-bottom: var(--space-md); position: relative; width: 100%;">
+              <!-- 智能拉取的上游可用模型清单弹窗浮层 -->
+              <aside id="amc" class="hd mdl-list-panel"><div class="panel-heading"><div><span class="panel-heading__mark"><i class="fas fa-cube" aria-hidden="true"></i></span><div><h3>可用模型</h3><p>点击“+”添加到配置。</p></div></div><button class="icon-btn" type="button" onclick="hideMdlPanel('amc')" title="关闭可用模型" aria-label="关闭可用模型"><i class="fas fa-times" aria-hidden="true"></i></button></div><div id="amcl"></div></aside>
+              <fieldset class="form-group">
+                <div class="fc justify-between mb-2" style="flex-wrap: wrap; gap: 8px;">
+                  <legend style="margin-bottom: 0;">模型列表</legend>
+                  <!-- 批量/拉取等极客管理功能栏 -->
+                  <div class="fc" style="gap: 6px;">
+                    <button type="button" class="btn btn-s btn-sm" onclick="fetchUpstreamModelsForAdd()" title="向端点请求并自动一键添加所有拉取的可用模型"><i class="fas fa-download"></i>一键添加拉取的模型</button>
+                    <button type="button" class="btn btn-s btn-sm" onclick="openBatchImportForAdd()" title="批量输入多行模型 ID"><i class="fas fa-file-import"></i>一键批量粘贴</button>
+                    <button type="button" class="btn btn-d btn-sm" onclick="clearAllModelsForAdd()" title="清空全部模型"><i class="fas fa-trash"></i>一键删除所有模型</button>
+                  </div>
+                </div>
+                <!-- 动态模型配置行列表 -->
+                <div id="amodels">
+                  <div class="fc mb-4 field-row">
+                    <input type="text" placeholder="deepseek-chat" class="fx1 ami" aria-label="模型 ID">
+                    <select class="select-sm amcat" style="width: 82px;" title="模型分类">
+                      <option value="auto">自动识别</option>
+                      <option value="text">文本</option>
+                      <option value="image">绘图</option>
+                      <option value="multimodal">多模态</option>
+                      <option value="other">其他</option>
+                    </select>
+                    <label class="tg" title="启用模型"><input type="checkbox" checked class="ame" aria-label="启用模型"><span class="sl"></span></label>
+                    <button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy" aria-hidden="true"></i></button>
+                    <button class="icon-btn" onclick="testNewMdl(this)" title="测试模型" aria-label="测试模型"><i class="fas fa-plug"></i></button>
+                    <button class="icon-btn" onclick="this.parentElement.remove()" title="移除模型" aria-label="移除模型"><i class="fas fa-times"></i></button>
+                  </div>
+                </div>
+                <!-- 手动添加新模型快捷栏 -->
+                <div class="fc mt-1 field-row">
+                  <input type="text" id="anew-mid" placeholder="新的模型 ID" class="fx1">
+                  <select id="anew-mcat" class="select-sm" style="width: 82px;" title="新模型分类">
+                    <option value="auto">自动分类</option>
                     <option value="text">文本</option>
                     <option value="image">绘图</option>
                     <option value="multimodal">多模态</option>
                     <option value="other">其他</option>
                   </select>
-                  <label class="tg" title="启用模型"><input type="checkbox" checked class="ame" aria-label="启用模型"><span class="sl"></span></label>
-                  <button class="icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy"></i></button>
-                  <button class="icon-btn" onclick="testNewMdl(this)" title="测试模型" aria-label="测试模型"><i class="fas fa-plug"></i></button>
-                  <button class="icon-btn" onclick="this.parentElement.remove()" title="移除模型" aria-label="移除模型"><i class="fas fa-times"></i></button>
+                  <button class="btn btn-s" type="button" onclick="addMdlRow()"><i class="fas fa-plus"></i>添加模型</button>
                 </div>
-              </div>
-              <div class="fc mt-1 field-row">
-                <input type="text" id="anew-mid" placeholder="新的模型 ID" class="fx1">
-                <select id="anew-mcat" class="select-sm" style="width: 82px;" title="新模型分类">
-                  <option value="auto">自动分类</option>
-                  <option value="text">文本</option>
-                  <option value="image">绘图</option>
-                  <option value="multimodal">多模态</option>
-                  <option value="other">其他</option>
-                </select>
-                <button class="btn btn-s" type="button" onclick="addMdlRow()"><i class="fas fa-plus"></i>添加模型</button>
-              </div>
-            </fieldset>
-              </div> <!-- 闭合右侧列 -->
-            </div> <!-- 闭合 grid-2-gap6 容器 -->
+              </fieldset>
+            </div>
             <div class="panel-actions"><label class="switch-label"><span>创建后立即启用</span><span class="tg"><input type="checkbox" checked id="aen"><span class="sl"></span></span></label><div><button class="btn btn-s" onclick="hideAdd()">取消</button><button class="btn btn-p" onclick="stageNewProv()"><i class="fas fa-plus" aria-hidden="true"></i>暂存提供商</button></div></div>
             <div id="atestR" class="mt-1" aria-live="polite"></div>
           </div>
