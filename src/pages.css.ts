@@ -311,7 +311,14 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
 .panel-actions, .detail-actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-sm); }
 .panel-actions > div, .detail-actions > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2xs); }
 .switch-label { min-height: var(--control-h); display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
-.gp, .provider-list, .key-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); }
+.gp, .key-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); }
+.provider-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-sm); }
+@media (min-width: 48rem) {
+  .provider-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
 .pi, .ki { min-width: 0; border: .0625rem solid var(--color-rule); border-radius: var(--radius-control); background: var(--color-paper); }
 .ps { min-height: 4.75rem; padding: var(--space-xs); display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); cursor: pointer; }
 .ps .l { min-width: 0; display: flex; align-items: center; gap: var(--space-xs); }

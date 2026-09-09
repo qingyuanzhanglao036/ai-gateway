@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.10
+ * 版本号: v1.0.12
  * 模块: AI Gateway 主应用入口与路由配置
  */
 import { Hono } from 'hono'
@@ -30,6 +30,7 @@ import {
   handleRunOpenClawProbe,
   handleGetProbeStatus,
   handleTriggerTierRefill,
+  handleGetCustomRoutes,
 } from './admin'
 import { renderHomePage, renderLoginPage, renderAdminPage } from './pages'
 import { seedInitialData, getSession } from './storage'
@@ -107,6 +108,7 @@ app.patch('/admin/api/proxy-keys/:id', handleUpdateProxyKey)
 
 // 统一批量保存与系统日志管理
 app.post('/admin/api/batch-save', handleBatchSave)
+app.get('/admin/api/custom-routes', handleGetCustomRoutes)
 app.get('/admin/api/logs', handleGetLogs)
 app.delete('/admin/api/logs', handleClearLogs)
 app.post('/admin/api/debug-config', handleUpdateDebugConfig)

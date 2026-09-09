@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.8
+ * 版本号: v1.0.12
  * 模块: AI Gateway 核心类型定义与模型智能分类辅助函数
  */
 
@@ -231,11 +231,22 @@ export interface TierConfig {
   tier3: TierPoolConfig           // 第三梯队(Tier3)绘图专属池 drawing/auto（默认6席）
 }
 
+// 自定义路由规则接口（最高优先级：匹配指定的调用别名直接定向到具体模型或梯队池）
+export interface CustomRouteRule {
+  id: string              // 规则唯一标识 ID
+  alias: string           // 匹配调用的模型别名/请求名（如 my-gpt4 或 gpt-4）
+  target: string          // 目标对象：提供商模型（如 openai/gpt-4o）或梯队池（如 tier1/auto）
+  enabled: boolean        // 是否启用规则
+  description?: string    // 描述说明
+  createdAt?: string      // 创建时间
+}
+
 export interface BatchSaveRequest {
   providers?: Provider[]
   proxyKeys?: ProxyKey[]
   debugConfig?: Partial<DebugConfig>
   tiers?: TierConfig              // 顺风车合并保存梯队配置
+  customRoutes?: CustomRouteRule[] // 顺风车合并保存自定义路由规则
 }
 
 export interface Env {

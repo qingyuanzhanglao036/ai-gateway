@@ -1,9 +1,9 @@
 /**
- * 版本号: v1.0.11
+ * 版本号: v1.0.14
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
-import { getProviders, getProxyKeys, getTierConfig } from './storage'
+import { getProviders, getProxyKeys, getTierConfig, getCustomRoutes } from './storage'
 import { SITE_CONFIG, OPENCODE_DEFAULT_URL, DEFAULT_TIER_CONFIG } from './config'
 import type { Env, ModelCategory, TierConfig, TierPoolConfig } from './types'
 import { detectModelCategory } from './types'
@@ -56,11 +56,11 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
           <div class="tier-pool-box__title"><i class="${icon} c-brand"></i>${escapePageHtml(tier.name)}</div>
           <span class="tier-pool-box__alias"><i class="fas fa-route" style="margin-right: 4px;"></i>别名: ${escapePageHtml(tier.alias)}</span>
         </div>
-        <span class="tier-seat-badge ${list.length >= tier.maxSeats ? 'tier-seat-badge--full' : ''}">${list.length} / ${tier.maxSeats} 席位</span>
+        <span class="tier-seat-badge ${list.length >= tier.maxSeats ? 'tier-seat-badge--full' : ''}">${isLoggedIn ? `${list.length} / ${tier.maxSeats} 席位` : `${tier.maxSeats} 席位容量`}</span>
       </div>
 
       <div class="tier-model-list">
-        ${list.length > 0 ? list.map((item) => {
+        ${isLoggedIn ? (list.length > 0 ? list.map((item) => {
           const prov = provMap.get(item.providerId)
           const pName = prov ? prov.name : item.providerId
           const cat = item.category || 'text'
@@ -85,6 +85,11 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
             <i class="fas fa-inbox" style="margin-bottom: 4px; display: block; font-size: 18px;"></i>
             所有模型默认不入池，管理员可在后台按需指派模型入席
           </div>
+        `) : `
+          <div style="text-align: center; padding: 20px 10px; color: var(--color-muted); font-size: 13px; background: var(--color-paper-2); border-radius: var(--radius-control); border: 1px dashed var(--color-rule-2);">
+            <i class="fas fa-lock" style="margin-bottom: 6px; display: block; font-size: 18px; color: var(--color-brand);"></i>
+            登录管理员账户解锁此梯队池席位明细
+          </div>
         `}
       </div>
 
@@ -98,9 +103,9 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
   }
 
   // 示例模型 ID
-  const sampleModel = tierConfig.tier1.models.length > 0
+  const sampleModel = isLoggedIn && tierConfig.tier1.models.length > 0
     ? `${tierConfig.tier1.models[0].providerId}/${tierConfig.tier1.models[0].modelId}`
-    : 'opencode/deepseek-v4-flash-free'
+    : 'flagship/auto'
 
   return c.html(`<!DOCTYPE html><html lang="zh-CN">
 ${H('首页')}
@@ -156,12 +161,21 @@ ${H('首页')}
     </figure>
   </section>
 
+  ${isLoggedIn ? `
   <section class="shell metrics-strip" aria-label="网关配置概览">
     <div class="metric"><span class="metric__value">${providers.length}</span><span class="metric__label">提供商总计</span></div>
     <div class="metric"><span class="metric__value">${enabledProviders.length}</span><span class="metric__label">已启用提供商</span></div>
     <div class="metric"><span class="metric__value">${allModelsCount}</span><span class="metric__label">模型总计</span></div>
     <div class="metric"><span class="metric__value">${enabledModelsCount}</span><span class="metric__label">可用模型</span></div>
   </section>
+  ` : `
+  <section class="shell metrics-strip" aria-label="网关特性概览">
+    <div class="metric"><span class="metric__value" style="font-size: 22px; color: var(--color-brand);"><i class="fas fa-user-shield"></i></span><span class="metric__label">隐私保护模式</span></div>
+    <div class="metric"><span class="metric__value" style="font-size: 22px; color: var(--color-brand);"><i class="fas fa-layer-group"></i></span><span class="metric__label">三大智能梯队池</span></div>
+    <div class="metric"><span class="metric__value" style="font-size: 22px; color: var(--color-brand);"><i class="fas fa-random"></i></span><span class="metric__label">无缝故障转移</span></div>
+    <div class="metric"><span class="metric__value" style="font-size: 22px; color: var(--color-brand);"><i class="fas fa-bolt"></i></span><span class="metric__label">OpenAI / Anthropic 兼容</span></div>
+  </section>
+  `}
 
   <!-- 三大梯队池展示 -->
   <section class="shell tier-section" aria-labelledby="tier-pool-title">
@@ -171,9 +185,9 @@ ${H('首页')}
         <p>提供旗舰模型池 (flagship/auto)、OpenClaw 模型池 (openclaw/auto) 与绘图专属池 (drawing/auto)，支持按席位调度并支持复制别名直接调用。</p>
       </div>
       <div class="fc" style="gap: 8px;">
-        <span class="status-chip status-chip--ok"><i class="fas fa-check-circle"></i> 旗舰池: ${tierConfig.tier1.models.length}/${tierConfig.tier1.maxSeats}</span>
-        <span class="status-chip status-chip--ok"><i class="fas fa-paw"></i> OpenClaw池: ${tierConfig.tier2.models.length}/${tierConfig.tier2.maxSeats}</span>
-        <span class="status-chip status-chip--ok"><i class="fas fa-paint-brush"></i> 绘图池: ${tierConfig.tier3.models.length}/${tierConfig.tier3.maxSeats}</span>
+        <span class="status-chip status-chip--ok"><i class="fas fa-check-circle"></i> 旗舰池: ${isLoggedIn ? `${tierConfig.tier1.models.length}/${tierConfig.tier1.maxSeats}` : '已启用'}</span>
+        <span class="status-chip status-chip--ok"><i class="fas fa-paw"></i> OpenClaw池: ${isLoggedIn ? `${tierConfig.tier2.models.length}/${tierConfig.tier2.maxSeats}` : '已启用'}</span>
+        <span class="status-chip status-chip--ok"><i class="fas fa-paint-brush"></i> 绘图池: ${isLoggedIn ? `${tierConfig.tier3.models.length}/${tierConfig.tier3.maxSeats}` : '已启用'}</span>
       </div>
     </div>
 
@@ -207,7 +221,7 @@ ${H('首页')}
       <div class="guide-step">
         <div class="guide-step__num">3</div>
         <h4>指定完整模型 ID</h4>
-        <p>模型名称格式为 <code>提供商ID/模型ID</code>，例如：<br><code style="font-size: 12px; color: var(--color-brand);">${escapePageHtml(sampleModel)}</code></p>
+        <p>模型名称格式为 <code>提供商ID/模型ID</code> 或 <code>梯队池别名</code>，例如：<br><code style="font-size: 12px; color: var(--color-brand);">${escapePageHtml(sampleModel)}</code></p>
       </div>
     </div>
 
@@ -265,7 +279,8 @@ main();</code></pre>
     </div>
   </section>
 
-  <!-- 全部启用提供商与模型索引 -->
+  ${isLoggedIn ? `
+  <!-- 全部启用提供商与模型索引 (已登录模式) -->
   <section class="shell directory" aria-labelledby="directory-title">
     <div class="section-heading">
       <div>
@@ -299,10 +314,33 @@ main();</code></pre>
           </div>
           <span class="status-badge status-badge--on"><i aria-hidden="true"></i>已启用</span>
         </article>`
-      }).join('') : `<div class="empty-state"><i class="fas fa-cubes" aria-hidden="true"></i><h3>尚无可用模型</h3><p>管理员启用提供商和模型后，它们会出现在这里。</p>${isLoggedIn ? '<a class="btn btn-p" href="/admin">前往管理控制台</a>' : ''}</div>`}
+      }).join('') : `<div class="empty-state"><i class="fas fa-cubes" aria-hidden="true"></i><h3>尚无可用模型</h3><p>管理员启用提供商和模型后，它们会出现在这里。</p><a class="btn btn-p" href="/admin">前往管理控制台</a></div>`}
     </div>
     <div id="search-empty" class="empty-state hd"><i class="fas fa-search" aria-hidden="true"></i><h3>没有匹配结果</h3><p>请尝试输入提供商名称、ID 或模型名称。</p></div>
   </section>
+  ` : `
+  <!-- 节点受保护隐蔽模式 (未登录) -->
+  <section class="shell directory" aria-labelledby="directory-title">
+    <div class="section-heading">
+      <div>
+        <h2 id="directory-title"><i class="fas fa-user-lock c-brand" style="margin-right: 8px;"></i>已配置模型索引</h2>
+        <p>节点信息受保护：仅限授权管理员登录后查看完整节点与底层模型配置。</p>
+      </div>
+    </div>
+
+    <div class="empty-state" style="padding: 44px 20px; background: var(--color-paper-2); border: 1px dashed var(--color-rule-2); border-radius: var(--radius-panel); text-align: center;">
+      <i class="fas fa-shield-alt" style="font-size: 40px; color: var(--color-brand); margin-bottom: 14px; display: block;" aria-hidden="true"></i>
+      <h3 style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">节点与模型保护已生效</h3>
+      <p style="max-width: 500px; margin: 0 auto 20px; color: var(--color-muted); font-size: 13px; line-height: 1.6;">
+        当前网关上游提供商节点及敏感模型清单已被隐私保护。若您是管理员，请登录管理控制台进行查看、操作与路由调优。
+      </p>
+      <a class="btn btn-p" href="/admin/login" style="padding: 10px 24px; font-size: 14px; display: inline-flex; align-items: center; gap: 8px;">
+        <i class="fas fa-sign-in-alt" aria-hidden="true"></i>
+        <span>登录管理员控制台解锁</span>
+      </a>
+    </div>
+  </section>
+  `}
 </main>
 
 ${renderSiteFooter(SITE_CONFIG.title)}
@@ -483,9 +521,12 @@ ${H('登录')}
 // ===== 管理后台 =====
 
 export async function renderAdminPage(c: Context<{ Bindings: Env }>) {
-  const providers = await getProviders(c.env)
-  const proxyKeys = await getProxyKeys(c.env)
-  const tierConfig = await getTierConfig(c.env)
+  const [providers, proxyKeys, tierConfig, customRoutes] = await Promise.all([
+    getProviders(c.env),
+    getProxyKeys(c.env),
+    getTierConfig(c.env),
+    getCustomRoutes(c.env),
+  ])
   const enabledProvidersCount = providers.filter((provider) => provider.enabled).length
   const modelsCount = providers.reduce((total, provider) => total + provider.models.length, 0)
   const enabledModelsCount = providers.reduce((total, provider) => total + provider.models.filter((model) => model.enabled).length, 0)
@@ -504,6 +545,7 @@ ${H('管理')}
       <a class="admin-nav__link is-active" href="#overview"><i class="fas fa-chart-pie" aria-hidden="true"></i><span>概览</span></a>
       <a class="admin-nav__link" href="#providers"><i class="fas fa-server" aria-hidden="true"></i><span>提供商</span><b>${providers.length}</b></a>
       <a class="admin-nav__link" href="#tier-pools"><i class="fas fa-layer-group" aria-hidden="true"></i><span>三大梯队池</span><b>3</b></a>
+      <a class="admin-nav__link" href="#custom-routes"><i class="fas fa-route" aria-hidden="true"></i><span>自定义路由</span><b>${customRoutes.length}</b></a>
       <a class="admin-nav__link" href="#proxy-keys"><i class="fas fa-key" aria-hidden="true"></i><span>转发 Key</span><b>${proxyKeys.length}</b></a>
       <a class="admin-nav__link" href="#system-logs"><i class="fas fa-file-alt" aria-hidden="true"></i><span>日志与调试</span></a>
     </nav>
@@ -701,6 +743,27 @@ ${H('管理')}
         </div>
       </section>
 
+      <section id="custom-routes" class="workspace-section" aria-labelledby="custom-routes-title">
+        <div class="section-heading section-heading--admin">
+          <div>
+            <h2 id="custom-routes-title"><i class="fas fa-route c-brand" style="margin-right: 8px;"></i>指定自定义路由</h2>
+            <p>可指定客户端模型别名直接重定向映射至具体模型或梯队池。<strong>此规则优先级最高，高于自动和梯队算法</strong>。变动需点击统一保存写入 KV。</p>
+          </div>
+          <button class="btn btn-p" type="button" onclick="addCustomRouteRow()"><i class="fas fa-plus" aria-hidden="true"></i>添加路由规则</button>
+        </div>
+
+        <div style="background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-panel); padding: 12px; margin-bottom: 12px; font-size: 13px; color: var(--color-muted);">
+          <i class="fas fa-info-circle c-brand" style="margin-right: 6px;"></i>
+          <strong>使用示例：</strong><br>
+          • 请求别名 <code>gpt-4o</code> ➔ 目标 <code>flagship/auto</code>（请求 gpt-4o 时强行重定向至第一梯队池调度）<br>
+          • 请求别名 <code>my-drawing</code> ➔ 目标 <code>opencode/flux-schnell</code>（强行映射至指定提供商模型）
+        </div>
+
+        <div id="customRoutesContainer" class="key-list">
+          <!-- 动态渲染自定义路由 -->
+        </div>
+      </section>
+
       <section id="system-logs" class="workspace-section" aria-labelledby="logs-title">
         <div class="section-heading section-heading--admin">
           <div>
@@ -776,6 +839,7 @@ ${H('管理')}
 let stagedProviders = ${JSON.stringify(providers).replace(/</g, '\\u003c')};
 let stagedProxyKeys = ${JSON.stringify(proxyKeys).replace(/</g, '\\u003c')};
 let stagedTiers = ${JSON.stringify(tierConfig).replace(/</g, '\\u003c')};
+let stagedCustomRoutes = ${JSON.stringify(customRoutes).replace(/</g, '\\u003c')};
 let unsavedChangesCount = 0;
 
 function markUnsaved() {
@@ -1099,12 +1163,39 @@ function renderModelGrid(models, editId, providerId) {
   return '<div class="grid-2-gap6">' + h + '</div>'
 }
 
+// 一键添加所有已拉取出来的模型并自动识别分类
+function importAllPulledModels(panelId, providerId) {
+  var panel = document.getElementById(panelId)
+  if (!panel) return
+  var items = panel.querySelectorAll('.mdl-item .ov')
+  if (items.length === 0) {
+    toast('面板中没有可导入的模型', 'warn')
+    return
+  }
+  var count = 0
+  items.forEach(function(el) {
+    var mid = el.innerText.trim()
+    if (mid) {
+      if (providerId) {
+        if (addMdlToProvider(providerId, mid, 'auto')) count++
+      } else {
+        if (addModelRowToContainer('amodels', mid, 'auto', true)) count++
+      }
+    }
+  })
+  markUnsaved()
+  toast('已一键添加 ' + count + ' 个拉取出的模型并自动识别分类（暂存中）', 'success')
+}
+
 // 可用模型面板 heading（添加态静态 HTML 与编辑态动态生成共用同一结构）
-function modelPanelHeading(panelId) {
+function modelPanelHeading(panelId, providerId) {
+  var pId = providerId || ''
+  var importBtn = '<button class="btn btn-s btn-sm" type="button" onclick="importAllPulledModels(\\\'' + panelId + '\\\',\\\'' + pId + '\\\')" title="一键将已拉取出的模型全量添加并自动识别分类"><i class="fas fa-file-import"></i> 一键添加已拉取模型</button>'
   return '<div class="panel-heading"><div>' +
     '<span class="panel-heading__mark"><i class="fas fa-cube" aria-hidden="true"></i></span>' +
-    '<div><h3>可用模型</h3><p>点击“+”添加到配置。</p></div></div>' +
-    '<button class="icon-btn" type="button" onclick="hideMdlPanel(\\'' + panelId + '\\')" title="关闭可用模型" aria-label="关闭可用模型"><i class="fas fa-times" aria-hidden="true"></i></button></div>'
+    '<div><h3>可用模型</h3><p>点击“+”单条添加，或点击一键添加所有拉取出的模型。</p></div></div>' +
+    '<div class="fc" style="gap: 6px;">' + importBtn +
+    '<button class="icon-btn" type="button" onclick="hideMdlPanel(\\\'' + panelId + '\\\')" title="关闭可用模型" aria-label="关闭可用模型"><i class="fas fa-times" aria-hidden="true"></i></button></div></div>'
 }
 
 // 关闭可用模型面板（仅隐藏，不清空已获取的模型数据）
@@ -1444,7 +1535,7 @@ function showEditModelsList(id, models) {
     el = document.createElement('aside')
     el.id = cid
     el.className = 'mdl-list-panel'
-    el.innerHTML = modelPanelHeading(cid) + '<div id="melc-' + id + '"></div>'
+    el.innerHTML = modelPanelHeading(cid, id) + '<div id="melc-' + id + '"></div>'
     keysFs.insertAdjacentElement('afterend', el)
   }
   el.classList.remove('hd')
@@ -1893,6 +1984,7 @@ async function triggerBatchSave() {
     providers: stagedProviders,
     proxyKeys: stagedProxyKeys,
     tiers: stagedTiers,
+    customRoutes: stagedCustomRoutes,
     debugConfig: {
       debugMode: debugMode,
       maxCacheItems: maxCacheItems,
@@ -1920,6 +2012,61 @@ async function triggerBatchSave() {
     if (btn) { btn.disabled = false; btn.innerHTML = origText }
     if (mBtn) { mBtn.disabled = false }
     updateUnsavedUI()
+  }
+}
+
+// ===== 指定自定义路由管理逻辑 =====
+function renderCustomRoutes() {
+  const container = document.getElementById('customRoutesContainer')
+  if (!container) return
+  if (!stagedCustomRoutes || stagedCustomRoutes.length === 0) {
+    container.innerHTML = '<div class="empty-state"><i class="fas fa-route" aria-hidden="true"></i><h3>暂无自定义路由规则</h3><p>自定义路由优先级最高，可强制将别名路由映射至具体模型或梯队池。</p><button class="btn btn-p" type="button" onclick="addCustomRouteRow()">添加路由规则</button></div>'
+    return
+  }
+
+  container.innerHTML = stagedCustomRoutes.map(function(rule, idx) {
+    return '<article class="ki" style="display: flex; flex-direction: column; gap: 8px;" data-id="' + escapeHtml(rule.id) + '">' +
+      '<div class="fr" style="gap: 8px; align-items: center; width: 100%;">' +
+        '<div class="fg" style="margin: 0; flex: 1;"><label style="font-size: 11px;">请求别名 (Alias)</label><input type="text" value="' + escapeHtml(rule.alias) + '" placeholder="如: gpt-4o" oninput="updateCustomRoute(' + idx + ',\\\'' + 'alias' + '\\\',this.value)"></div>' +
+        '<div class="fg" style="margin: 0; flex: 1;"><label style="font-size: 11px;">目标模型/梯队池 (Target)</label><input type="text" value="' + escapeHtml(rule.target) + '" placeholder="如: flagship/auto 或 deepseek/deepseek-chat" oninput="updateCustomRoute(' + idx + ',\\\'' + 'target' + '\\\',this.value)"></div>' +
+        '<div class="fg" style="margin: 0; flex: 1.2;"><label style="font-size: 11px;">规则说明 (可选)</label><input type="text" value="' + escapeHtml(rule.description || '') + '" placeholder="如: 官方 gpt-4o 强行映射至第一梯队" oninput="updateCustomRoute(' + idx + ',\\\'' + 'description' + '\\\',this.value)"></div>' +
+      '</div>' +
+      '<div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--color-rule); padding-top: 6px; width: 100%;">' +
+        '<div class="fc" style="gap: 8px;">' +
+          '<label class="tg"><input type="checkbox" ' + (rule.enabled ? 'checked' : '') + ' onchange="updateCustomRoute(' + idx + ',\\\'' + 'enabled' + '\\\',this.checked)"><span class="sl"></span></label>' +
+          '<span class="bd ' + (rule.enabled ? 'bd-on' : 'bd-off') + '">' + (rule.enabled ? '已启用' : '已禁用') + '</span>' +
+        '</div>' +
+        '<button class="bd bd-del" type="button" onclick="removeCustomRouteRow(' + idx + ')"><i class="fas fa-trash" aria-hidden="true"></i>删除</button>' +
+      '</div>' +
+    '</article>'
+  }).join('')
+}
+
+function addCustomRouteRow() {
+  if (!stagedCustomRoutes) stagedCustomRoutes = []
+  stagedCustomRoutes.push({
+    id: 'route_' + Date.now().toString(36),
+    alias: '',
+    target: 'flagship/auto',
+    description: '',
+    enabled: true
+  })
+  renderCustomRoutes()
+  markUnsaved()
+}
+
+function updateCustomRoute(idx, field, value) {
+  if (stagedCustomRoutes && stagedCustomRoutes[idx]) {
+    stagedCustomRoutes[idx][field] = value
+    markUnsaved()
+  }
+}
+
+function removeCustomRouteRow(idx) {
+  if (stagedCustomRoutes) {
+    stagedCustomRoutes.splice(idx, 1)
+    renderCustomRoutes()
+    markUnsaved()
   }
 }
 
@@ -2010,8 +2157,9 @@ async function handleDebugToggle(checked) {
   }
 }
 
-// 页面加载后自动加载三大梯队池与日志
+// 页面加载后自动加载三大梯队池、自定义路由与日志
 renderTierPools()
+renderCustomRoutes()
 fetchLogs()
 
 // 显式将常用的点击处理函数挂载到 window 上，保证 HTML onclick 全局可用
@@ -2021,6 +2169,10 @@ window.genKey = genKey;
 window.fetchLogs = fetchLogs;
 window.clearLogs = clearLogs;
 window.handleDebugToggle = handleDebugToggle;
+window.addCustomRouteRow = addCustomRouteRow;
+window.updateCustomRoute = updateCustomRoute;
+window.removeCustomRouteRow = removeCustomRouteRow;
+window.importAllPulledModels = importAllPulledModels;
 
 // 中文说明：根据点击和 URL 锚点同步侧栏选中态，避免导航始终停留在“概览”。
 const adminNavLinks = Array.from(document.querySelectorAll('.admin-nav a[href^="#"]'))

@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.11
+ * 版本号: v1.0.12
  * 模块: 系统常量、KV键名及三大梯队默认配置
  */
 import type { Provider, TierConfig } from './types'
@@ -7,7 +7,7 @@ import type { Provider, TierConfig } from './types'
 export const SITE_CONFIG = {
   title: 'AI Gateway',
   subtitle: '统一的 AI 管理平台',
-  version: 'v1.0.11',
+  version: 'v1.0.12',
   author: 'QingYun',
   authorUrl: 'https://github.com/yutian81/ai-gateway',
   blogUrl: 'https://blog.notett.com',
@@ -55,6 +55,7 @@ export const KV_KEYS = {
   PROVIDERS: 'providers',
   PROXY_KEYS: 'proxy:keys',
   TIERS: 'tier:pools', // 三大梯队持久化键
+  CUSTOM_ROUTES: 'routes:custom', // 自定义路由规则持久化键
   PROBE_AUDITION_CURSOR: 'probe:audition:cursor', // 海选探测轮询游标持久化键
   PROBE_AUDITION_LOGS: 'probe:audition:logs',     // 海选探测记录（隔离存储，不作为业务淘汰依据）
   PROBE_OPENCLAW_LOGS: 'probe:openclaw:logs',     // OpenClaw专属探测记录（隔离存储）

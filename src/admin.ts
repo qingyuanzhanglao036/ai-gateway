@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.10
+ * 版本号: v1.0.12
  * 模块: 管理后台核心 API 处理函数（提供商/Key管理、梯队池、统一批量保存与日志调试）
  */
 import { Context } from 'hono'
@@ -17,6 +17,8 @@ import {
   deleteProxyKey,
   getTierConfig,
   setTierConfig,
+  getCustomRoutes,
+  setCustomRoutes,
 } from './storage'
 import { testModelConnection } from './proxy'
 import { fetchOpenCodeModels, isOpenCodeProvider, resolveOpenCodeUrls, testOpenCodeModel } from './opencode'
@@ -390,7 +392,12 @@ export async function handleBatchSave(c: Context<{ Bindings: Env }>) {
       await setTierConfig(c.env, body.tiers)
     }
 
-    // 4. 若提交了调试模式与缓存配置，同步更新并执行可能需要的即时落盘
+    // 4. 若提交了自定义路由规则，搭顺风车批量持久化写入 KV
+    if (body.customRoutes && Array.isArray(body.customRoutes)) {
+      await setCustomRoutes(c.env, body.customRoutes)
+    }
+
+    // 5. 若提交了调试模式与缓存配置，同步更新并执行可能需要的即时落盘
     if (body.debugConfig) {
       await updateDebugConfig(c.env, body.debugConfig)
     }
@@ -668,6 +675,21 @@ export async function handleGetProbeStatus(c: Context<{ Bindings: Env }>) {
     return c.json<ApiResponse>({
       success: false,
       message: `获取探测状态失败: ${(err as Error).message}`,
+    }, 500)
+  }
+}
+
+/**
+ * 获取自定义路由规则配置
+ */
+export async function handleGetCustomRoutes(c: Context<{ Bindings: Env }>) {
+  try {
+    const routes = await getCustomRoutes(c.env)
+    return c.json<ApiResponse<typeof routes>>({ success: true, data: routes })
+  } catch (err) {
+    return c.json<ApiResponse>({
+      success: false,
+      message: `获取自定义路由失败: ${(err as Error).message}`,
     }, 500)
   }
 }

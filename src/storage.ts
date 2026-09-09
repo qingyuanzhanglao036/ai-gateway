@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.8
+ * 版本号: v1.0.12
  * 模块: 数据持久化层（KV 存储读写与顺风车打包）
  */
 import {
@@ -19,6 +19,7 @@ import type {
   ModelBusinessLatencyStats,
   BusinessLatencySample,
   SessionStickinessRecord,
+  CustomRouteRule,
 } from './types'
 
 // ===== 会话专属调度粘性策略（单会话最多保存最近5条成功模型，带过期时间TTL，保护免费版KV每日1000写配额） =====
@@ -196,6 +197,16 @@ export async function getTierConfig(env: Env): Promise<TierConfig> {
 // 将三大梯队配置一次性持久化至 KV
 export async function setTierConfig(env: Env, config: TierConfig): Promise<void> {
   await env.KV.put(KV_KEYS.TIERS, JSON.stringify(config))
+}
+
+// ===== 自定义路由规则 CRUD =====
+export async function getCustomRoutes(env: Env): Promise<CustomRouteRule[]> {
+  const data = await env.KV.get(KV_KEYS.CUSTOM_ROUTES)
+  return data ? JSON.parse(data) : []
+}
+
+export async function setCustomRoutes(env: Env, routes: CustomRouteRule[]): Promise<void> {
+  await env.KV.put(KV_KEYS.CUSTOM_ROUTES, JSON.stringify(routes))
 }
 
 // ===== 提供商 CRUD =====

@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.8
+ * 版本号: v1.0.12
  * 模块: API 代理请求转发、健康探测、梯队路由调度与会话专属调度粘性策略
  */
 import { Context } from 'hono'
@@ -9,11 +9,13 @@ import {
   setProviders,
   getTierConfig,
   setTierConfig,
+  getCustomRoutes,
   recordBusinessLatency,
   getSessionStickiness,
   recordSessionSuccessModel,
   getModelBusinessLatency,
 } from './storage'
+import { triggerTierRefill } from './probe'
 import {
   KV_KEYS,
   KEY_HEALTH_COOLDOWN_MS,
@@ -24,7 +26,6 @@ import {
 import type { Env, ProxyRequestBody, TierKey, Provider, TierConfig } from './types'
 import { isOpenCodeProvider, proxyOpenCodeRequest, resolveOpenCodeUrls } from './opencode'
 import { recordLog, queueHealthUpdate, checkAndFlushOnRequest } from './log'
-import { triggerTierRefill } from './probe'
 
 // ===== Key 健康状态类型和辅助函数 =====
 
@@ -93,6 +94,32 @@ async function resolveScheduledModel(
   tiers: TierConfig
 ): Promise<{ providerId: string; modelId: string; tierKey?: TierKey; matchedBySession?: boolean } | null> {
   const lower = requestedModel.toLowerCase()
+
+  // ===== 自定义指定路由规则（最高优先级） =====
+  const customRoutes = await getCustomRoutes(env)
+  const matchedRule = customRoutes.find(
+    r => r.enabled && r.alias.toLowerCase() === lower
+  )
+
+  if (matchedRule) {
+    const targetLower = matchedRule.target.toLowerCase()
+    // 检查目标是否指向某个梯队别名
+    if (
+      targetLower === 'flagship/auto' || targetLower === 'tier1/auto' || targetLower === 'tier1' ||
+      targetLower === 'openclaw/auto' || targetLower === 'tier2/auto' || targetLower === 'tier2' ||
+      targetLower === 'drawing/auto' || targetLower === 'tier3/auto' || targetLower === 'tier3'
+    ) {
+      // 递归通过梯队算法解析目标梯队
+      return resolveScheduledModel(env, matchedRule.target, sessionId, providers, tiers)
+    }
+
+    // 目标是具体的 providerId/modelId
+    const parsed = parseModelId(matchedRule.target)
+    if (parsed) {
+      return { providerId: parsed.providerId, modelId: parsed.modelId }
+    }
+  }
+
   let targetTierKey: TierKey | null = null
 
   // 匹配三大梯队别名或标识
@@ -352,6 +379,17 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
       getProviders(c.env),
       getTierConfig(c.env),
     ])
+
+    // 1. 流量到达触发：检测三大梯队池是否有席位空缺，若有则异步启动补位规则（内存防抖 5 秒，保护 KV 写频次）
+    const allTierKeys: TierKey[] = ['tier1', 'tier2', 'tier3']
+    for (const tk of allTierKeys) {
+      const pool = tiers[tk]
+      if (pool && pool.models.length < pool.maxSeats) {
+        c.executionCtx.waitUntil(
+          triggerTierRefill(c.env, tk).catch(e => console.error(`[proxy] 流量触发【${tk}】补位异常:`, e))
+        )
+      }
+    }
 
     // 智能解析调度模型（梯队别名自动路由 + 会话专属粘性复用 + 真实延迟择优）
     const scheduled = await resolveScheduledModel(c.env, requestedModel, sessionId, providers, tiers)
@@ -650,9 +688,10 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
 
 /** 处理 /v1/models — 返回所有已启用的模型（含三大梯队别名模型与提供商前缀） */
 export async function handleModels(c: Context<{ Bindings: Env }>) {
-  const [providers, tiers] = await Promise.all([
+  const [providers, tiers, customRoutes] = await Promise.all([
     getProviders(c.env),
     getTierConfig(c.env),
+    getCustomRoutes(c.env),
   ])
 
   const models: Array<{
@@ -663,6 +702,20 @@ export async function handleModels(c: Context<{ Bindings: Env }>) {
     created: number
     owned_by: string
   }> = []
+
+  // 0. 注入已启用的自定义路由别名 (最高优先级)
+  for (const rule of customRoutes) {
+    if (rule.enabled && rule.alias) {
+      models.push({
+        id: rule.alias,
+        provider: 'custom_route',
+        provider_name: rule.description || `自定义路由 (${rule.target})`,
+        object: 'model',
+        created: Math.floor(Date.now() / 1000),
+        owned_by: 'custom_route',
+      })
+    }
+  }
 
   // 1. 注入三大梯队智能调度别名
   const tierAliases: Array<{ id: string; name: string; key: TierKey }> = [
