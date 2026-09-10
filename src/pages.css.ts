@@ -696,8 +696,11 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
 .tier-active-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: #dcfce7; color: #15803d; border: 1px solid #86efac; line-height: 1.3; white-space: nowrap; }
 .tier-active-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; display: inline-block; box-shadow: 0 0 5px rgba(34, 197, 94, 0.8); }
 
-/* OpenClaw 专属认证徽章 */
-.tier-claw-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: #fef3c7; color: #b45309; border: 1px solid #fde68a; line-height: 1.3; white-space: nowrap; }
+/* OpenClaw 专属认证徽章（高亮且支持点击交互） */
+.tier-claw-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; line-height: 1.3; white-space: nowrap; }
+.tier-claw-badge--btn { cursor: pointer; user-select: none; transition: all .15s ease; }
+.tier-claw-badge--btn:hover { background: #ede9fe; border-color: #c4b5fd; transform: translateY(-1px); box-shadow: 0 1px 3px rgba(109, 40, 217, 0.15); }
+.tier-claw-badge--btn:active { transform: translateY(0); }
 
 .tier-pool-form { display: flex; gap: 6px; align-items: center; margin-block-start: auto; padding-block-start: var(--space-xs); border-block-start: 1px dashed var(--color-rule); }
 
