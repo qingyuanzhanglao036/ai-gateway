@@ -885,6 +885,19 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
   background: #f3efff;
   color: #512da8;
 }
+.model-mini-badge--btn {
+  cursor: pointer;
+  user-select: none;
+  transition: all .15s ease;
+}
+.model-mini-badge--btn:hover {
+  filter: brightness(0.95);
+  transform: translateY(-1px);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.model-mini-badge--btn:active {
+  transform: translateY(0);
+}
 .model-mini-badge--muted {
   border-color: var(--color-rule);
   background: var(--color-paper-2);

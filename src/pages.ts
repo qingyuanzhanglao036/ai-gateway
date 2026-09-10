@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.36
+ * 版本号: v1.0.39
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -1681,13 +1681,10 @@ function addModelRowToContainer(containerId, mid, category, enabled) {
 
   var cat = (category && category !== 'auto') ? category : detectModelCategory(mid)
 
-  // 2. 智能判定 OpenClaw 在席匹配度
-  var isOpenClaw = false
-  if (window.stagedTiers && window.stagedTiers.tier2 && window.stagedTiers.tier2.models) {
-    isOpenClaw = window.stagedTiers.tier2.models.some(function(tm) {
-      return tm.providerId === provId && tm.modelId === mid
-    })
-  }
+  // 2. 判定 OpenClaw 专属标签
+  var pObj = stagedProviders.find(function(x) { return x.id === provId })
+  var mObj = pObj && pObj.models ? pObj.models.find(function(item) { return item.id === mid }) : null
+  var hasClawTag = (mObj && Array.isArray(mObj.tags) && mObj.tags.includes('openclaw')) || /openclaw/i.test(mid)
 
   // 3. 拉取最新的测速延迟数据
   var latencyVal = null
@@ -1699,10 +1696,10 @@ function addModelRowToContainer(containerId, mid, category, enabled) {
     }
   }
 
-  // 4. 生成 OpenClaw 的胶囊标签 HTML
-  var clawBadge = isOpenClaw 
-    ? '<span class="model-mini-badge model-mini-badge--claw" title="在席 OpenClaw 池"><i class="fas fa-robot"></i>OpenClaw</span>'
-    : '<span class="model-mini-badge model-mini-badge--muted" title="未入席 OpenClaw 池"><i class="fas fa-cube"></i>普通</span>'
+  // 4. 生成 OpenClaw 的胶囊标签 HTML（支持点击切换）
+  var clawBadge = hasClawTag 
+    ? '<span class="model-mini-badge model-mini-badge--claw model-mini-badge--btn" id="mclaw-' + provId + '-' + mi + '" onclick="toggleOpenClawTag(\\\'' + provId + '\\\',\\\'' + escapeHtml(mid) + '\\\',' + mi + ')" title="具备 OpenClaw 专属标签（点击可取消）"><i class="fas fa-robot"></i>OpenClaw</span>'
+    : '<span class="model-mini-badge model-mini-badge--muted model-mini-badge--btn" id="mclaw-' + provId + '-' + mi + '" onclick="toggleOpenClawTag(\\\'' + provId + '\\\',\\\'' + escapeHtml(mid) + '\\\',' + mi + ')" title="普通模型（点击可赋予 OpenClaw 专属标签）"><i class="fas fa-cube"></i>普通</span>'
 
   // 5. 组装延迟信息标签
   var latencyBadge = latencyVal 
@@ -1902,16 +1899,11 @@ function renderProviderCard(p) {
         badge = '<span class="model-mini-badge model-mini-badge--warn" id="mstatus-' + p.id + '-' + mi + '" title="冷却中"><i class="fas fa-snowflake"></i>冷却中</span>'
       }
 
-      // 3. 动态检测并判定模型是否在 OpenClaw 适合池内
-      var isOpenClaw = false
-      if (window.stagedTiers && window.stagedTiers.tier2 && window.stagedTiers.tier2.models) {
-        isOpenClaw = window.stagedTiers.tier2.models.some(function(tm) {
-          return tm.providerId === p.id && tm.modelId === m.id
-        })
-      }
-      var clawBadge = isOpenClaw 
-        ? '<span class="model-mini-badge model-mini-badge--claw" title="此模型已指派至 OpenClaw 别名池内"><i class="fas fa-robot"></i>OpenClaw</span>'
-        : '<span class="model-mini-badge model-mini-badge--muted" title="此模型未进入 OpenClaw 别名池"><i class="fas fa-cube"></i>普通</span>'
+      // 3. 判定模型是否具备 OpenClaw 专属标签（支持手动点击切换）
+      var hasClawTag = (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id)
+      var clawBadge = hasClawTag 
+        ? '<span class="model-mini-badge model-mini-badge--claw model-mini-badge--btn" id="mclaw-' + p.id + '-' + mi + '" onclick="toggleOpenClawTag(\\\'' + p.id + '\\\',\\\'' + escapeHtml(m.id) + '\\\',' + mi + ')" title="具备 OpenClaw 专属标签（点击可取消）"><i class="fas fa-robot"></i>OpenClaw</span>'
+        : '<span class="model-mini-badge model-mini-badge--muted model-mini-badge--btn" id="mclaw-' + p.id + '-' + mi + '" onclick="toggleOpenClawTag(\\\'' + p.id + '\\\',\\\'' + escapeHtml(m.id) + '\\\',' + mi + ')" title="普通模型（点击可赋予 OpenClaw 专属标签）"><i class="fas fa-cube"></i>普通</span>'
 
       // 4. 读取实时延迟探测信息
       var latencyVal = null
@@ -2110,7 +2102,7 @@ function getMdl(id) {
     var catSelect = document.getElementById('mcat-' + id + '-' + idx)
     var category = catSelect ? catSelect.value : detectModelCategory(mid)
 
-    // 继承原有运行标记、失败计数器与冷却时间
+    // 继承原有运行标记、失败计数器、冷却时间与标签属性
     var old = existingModels.find(function(m) { return m.id === mid }) || {}
     var res = Object.assign({}, old, {
       id: mid,
@@ -2120,6 +2112,7 @@ function getMdl(id) {
       status: old.status || 'healthy',
       failCount: typeof old.failCount === 'number' ? old.failCount : 0
     })
+    if (Array.isArray(old.tags)) res.tags = old.tags.slice()
     if (old.cooldownUntil) res.cooldownUntil = old.cooldownUntil
     return mid ? res : null
   }).filter(Boolean)
@@ -2179,7 +2172,7 @@ function addMdlToProvider(providerId, mid, category) {
   </select>
   <span class="model-mini-badge model-mini-badge--ok" id="mstatus-\${escapeHtml(providerId)}-\${cnt}" title="运行正常"><i class="fas fa-check-circle"></i>正常</span>
   <button type="button" class="btn btn-s btn-sm" id="munblock-\${escapeHtml(providerId)}-\${cnt}" style="display:none; height: 22px; padding: 0 6px; font-size: 11px;" onclick="unblockModel('\${escapeHtml(providerId)}','\${escapeHtml(mid)}',\${cnt})" title="解封此模型"><i class="fas fa-unlock"></i>解封</button>
-  <span class="model-mini-badge model-mini-badge--muted" title="未进入 OpenClaw 别名池"><i class="fas fa-cube"></i>普通</span>
+  <span class="model-mini-badge model-mini-badge--muted model-mini-badge--btn" id="mclaw-\${escapeHtml(providerId)}-\${cnt}" onclick="toggleOpenClawTag('\${escapeHtml(providerId)}','\${escapeHtml(mid)}',\${cnt})" title="普通模型（点击可赋予 OpenClaw 专属标签）"><i class="fas fa-cube"></i>普通</span>
   <span class="model-mini-badge model-mini-badge--muted" title="该模型暂无测速数据"><i class="fas fa-tachometer-alt"></i>未测</span>
 </div>\`
   c.appendChild(d)
@@ -2242,6 +2235,82 @@ function unblockModel(providerId, modelId, modelIdx) {
   markUnsaved()
   toast('已成功解封模型【' + modelId + '】，连续失败计数器已清零（暂存中，需统一保存生效）', 'success')
 }
+
+// 手动切换模型的 OpenClaw 专属标签；若取消标签且模型在 Tier2 池中，则弹出清晰确认提示并联动自动移出池
+function toggleOpenClawTag(providerId, modelId, modelIdx) {
+  var p = stagedProviders.find(function(x) { return x.id === providerId })
+  if (!p || !p.models) return
+  var m = p.models.find(function(x) { return x.id === modelId }) || p.models[modelIdx]
+  if (!m) return
+
+  // 获取当前标签状态（通过 tags 数组或模型ID正则判断）
+  var hasTag = (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id)
+  
+  if (hasTag) {
+    // 准备取消专属标签：检查是否在第二梯队（OpenClaw 专属模型池）中
+    var inTier2 = false
+    var tier2Idx = -1
+    if (window.stagedTiers && window.stagedTiers.tier2 && Array.isArray(window.stagedTiers.tier2.models)) {
+      tier2Idx = window.stagedTiers.tier2.models.findIndex(function(tm) {
+        return tm.providerId === providerId && tm.modelId === m.id
+      })
+      inTier2 = tier2Idx >= 0
+    }
+
+    // 弹窗提示：清晰告知取消后果与联动移出池的动作（字符串使用 \\n 保持在输出页面脚本中语法合法）
+    var tipMsg = inTier2
+      ? '【确认取消 OpenClaw 专属标签】\\n\\n模型【' + m.id + '】当前正在第二梯队（OpenClaw专属池）在席运行。\\n\\n取消专属标签后，系统将自动把该模型从第二梯队中移除，确保池内仅保留专属认证模型。\\n\\n是否确认取消并从专属池中移除？'
+      : '【确认取消 OpenClaw 专属标签】\\n\\n是否确定取消模型【' + m.id + '】的 OpenClaw 专属标签？'
+    
+    if (!confirm(tipMsg)) {
+      return
+    }
+
+    // 从 tags 数组中移除 openclaw
+    if (Array.isArray(m.tags)) {
+      m.tags = m.tags.filter(function(t) { return t !== 'openclaw' })
+    }
+
+    // 联动逻辑：如果正在 Tier2 池中，联动将其移出梯队池
+    if (inTier2 && tier2Idx >= 0) {
+      window.stagedTiers.tier2.models.splice(tier2Idx, 1)
+      if (typeof renderTierPools === 'function') {
+        renderTierPools()
+      }
+    }
+
+    // 更新当前模型卡片上的徽章显示
+    var clawBadgeEl = document.getElementById('mclaw-' + providerId + '-' + modelIdx)
+    if (clawBadgeEl) {
+      clawBadgeEl.className = 'model-mini-badge model-mini-badge--muted model-mini-badge--btn'
+      clawBadgeEl.innerHTML = '<i class="fas fa-cube"></i>普通'
+      clawBadgeEl.title = '未具备 OpenClaw 标签（点击赋予专属标签）'
+    }
+
+    markUnsaved()
+    toast('已取消模型【' + m.id + '】专属标签' + (inTier2 ? '，并已从第二梯队池中移除' : '') + '（暂存中）', 'info')
+  } else {
+    // 手动赋予专属标签
+    if (!Array.isArray(m.tags)) {
+      m.tags = []
+    }
+    if (!m.tags.includes('openclaw')) {
+      m.tags.push('openclaw')
+    }
+
+    // 更新徽章显示为 OpenClaw
+    var clawBadgeEl = document.getElementById('mclaw-' + providerId + '-' + modelIdx)
+    if (clawBadgeEl) {
+      clawBadgeEl.className = 'model-mini-badge model-mini-badge--claw model-mini-badge--btn'
+      clawBadgeEl.innerHTML = '<i class="fas fa-robot"></i>OpenClaw'
+      clawBadgeEl.title = '已具备 OpenClaw 专属标签（点击取消专属标签）'
+    }
+
+    markUnsaved()
+    toast('已为模型【' + m.id + '】赋予 OpenClaw 专属标签（暂存中）', 'success')
+  }
+}
+window.toggleOpenClawTag = toggleOpenClawTag
 
 // 一键重置冷却模型：仅清理处于冷却期（cooling）的模型状态，恢复正常调度；严格不重置已熔断永久失效的模型及失败计数器
 function resetCoolingModels() {
