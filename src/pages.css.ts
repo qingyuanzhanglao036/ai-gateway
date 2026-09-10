@@ -662,25 +662,34 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
 .batch-import-area { width: 100%; min-height: 140px; font-family: var(--font-mono); font-size: 13px; line-height: 1.5; padding: 8px; border-radius: var(--radius-control); border: 1px solid var(--color-rule); background: var(--color-paper); }
 
 /* 三大梯队池后台管理与前台展示样式 */
-.tier-pools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--space-md); margin-block-start: var(--space-md); }
+.tier-pools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr)); gap: var(--space-md); margin-block-start: var(--space-md); }
 .tier-pool-box { background: var(--color-paper); border: .0625rem solid var(--color-rule); border-radius: var(--radius-panel); padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); box-shadow: 0 2px 6px rgba(0,0,0,0.02); }
-.tier-pool-box__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; border-block-end: .0625rem solid var(--color-rule); padding-block-end: var(--space-xs); }
-.tier-pool-box__title { font-size: var(--text-base); font-weight: 600; color: var(--color-ink); display: flex; align-items: center; gap: 6px; }
-.tier-pool-box__alias { font-family: var(--font-mono); font-size: .75rem; color: var(--color-accent); background: var(--color-accent-soft); padding: 2px 6px; border-radius: 4px; display: inline-block; margin-block-start: 2px; }
-.tier-seat-badge { font-family: var(--font-mono); font-size: .75rem; font-weight: 600; padding: 3px 8px; border-radius: var(--radius-round); background: var(--color-paper-2); border: 1px solid var(--color-rule); }
-.tier-seat-badge--full { background: oklch(92% 0.12 85); color: oklch(35% 0.1 75); }
-.tier-model-list { display: flex; flex-direction: column; gap: 6px; min-height: 60px; } /* 优化：缩窄列表中的垂直模型间距 */
-.tier-model-item { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 8px; background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: var(--radius-control); font-size: .75rem; } /* 优化：卡片内边距从 10px 降至 5px，默认全屏宽度都采用横向排列，极致节省纵向高度 */
-.tier-model-item__info { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex: 1; min-width: 0; word-break: break-all; white-space: normal; } /* 优化：元素间距降至 4px，自动流式换行对齐 */
-.tier-model-item__info strong { font-family: var(--font-mono); font-weight: 600; color: var(--color-ink); word-break: break-all; font-size: .75rem; } /* 优化：模型名文字降至 12px (.75rem) */
-.tier-model-item__prov { font-size: .625rem; color: var(--color-muted); background: var(--color-paper-3); padding: 1px 3px; border-radius: 3px; white-space: nowrap; } /* 优化：提供商前缀微缩气泡化 */
+.tier-pool-box__header { display: flex; flex-direction: column; gap: 6px; border-block-end: .0625rem solid var(--color-rule); padding-block-end: 8px; }
+.tier-pool-box__header-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tier-pool-box__header-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tier-pool-box__title { font-size: 14px; font-weight: 600; color: var(--color-ink); display: flex; align-items: center; gap: 6px; }
+.tier-pool-box__alias { font-family: var(--font-mono); font-size: 11px; color: var(--color-accent); background: var(--color-accent-soft); padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; line-height: 1.3; }
+.tier-pool-seats-ctrl { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--color-muted); }
+.tier-pool-seats-ctrl input { width: 52px; height: 24px; padding: 1px 4px; font-size: 12px; text-align: center; font-family: var(--font-mono); border: 1px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-paper-2); color: var(--color-ink); box-sizing: border-box; }
+.tier-seat-badge { font-family: var(--font-mono); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-round); background: var(--color-paper-2); border: 1px solid var(--color-rule); color: var(--color-ink-2); white-space: nowrap; }
+.tier-seat-badge--full { background: #fef3c7; color: #92400e; border-color: #fde68a; }
 
-/* 双延迟指标指示器：海选定时探测延迟 与 真实用户调用平均延迟 */
-.tier-model-latencies { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.latency-badge { display: inline-flex; align-items: center; gap: 2px; font-family: var(--font-mono); font-size: .625rem; font-weight: 500; padding: 1px 4px; border-radius: 3px; white-space: nowrap; border: .0625rem solid transparent; } /* 优化：延迟指标卡片微缩化，更利于在卡片内紧凑排列 */
-.latency-badge--probe { background: oklch(96% 0.015 85); color: oklch(50% 0.12 85); border-color: oklch(90% 0.030 85); }
-.latency-badge--real { background: var(--color-accent-soft); color: var(--color-focus); border-color: oklch(88% 0.020 256); }
-.latency-badge--none { background: var(--color-paper-3); color: var(--color-muted); border-color: var(--color-rule); }
+/* 规整统一的模型卡片：两行标准化流式卡片，杜绝参差不齐与大灰膏药 */
+.tier-model-list { display: flex; flex-direction: column; gap: 6px; min-height: 60px; }
+.tier-model-item { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: var(--radius-control); transition: border-color .15s ease, background .15s ease; box-sizing: border-box; }
+.tier-model-item:hover { border-color: #cbd5e1; background: var(--color-paper); }
+.tier-model-item__top { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; }
+.tier-model-idx { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--color-brand); background: var(--color-brand-soft); padding: 1px 4px; border-radius: 3px; flex-shrink: 0; line-height: 1.2; }
+.tier-model-prov { font-size: 10px; color: var(--color-muted); background: var(--color-paper-3); padding: 1px 4px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; max-width: 65px; overflow: hidden; text-overflow: ellipsis; border: 1px solid var(--color-rule); line-height: 1.3; }
+.tier-model-name { font-family: var(--font-mono); font-weight: 600; font-size: 12px; color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.tier-model-del { color: var(--color-muted); background: transparent; border: none; cursor: pointer; padding: 2px 4px; border-radius: 3px; font-size: 11px; line-height: 1; flex-shrink: 0; transition: color .15s, background .15s; }
+.tier-model-del:hover { color: #dc2626; background: #fee2e2; }
+.tier-model-item__bottom { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-width: 0; }
+.tier-model-latencies { display: inline-flex; align-items: center; gap: 4px; }
+.latency-badge { display: inline-flex; align-items: center; gap: 3px; font-family: var(--font-mono); font-size: 10px; font-weight: 500; padding: 1px 5px; border-radius: 3px; white-space: nowrap; border: 1px solid transparent; line-height: 1.3; }
+.latency-badge--probe { background: #fef9c3; color: #854d0e; border-color: #fde047; }
+.latency-badge--real { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; }
+.latency-badge--none { background: transparent; color: var(--color-muted); border-color: transparent; font-size: 10px; opacity: 0.65; }
 
 .tier-pool-form { display: flex; gap: 6px; align-items: center; margin-block-start: auto; padding-block-start: var(--space-xs); border-block-start: 1px dashed var(--color-rule); }
 

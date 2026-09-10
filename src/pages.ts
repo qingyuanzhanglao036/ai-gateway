@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.35
+ * 版本号: v1.0.36
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -1322,22 +1322,24 @@ function renderTierPools() {
 
     return '<div class="tier-pool-box" data-tier="' + item.key + '">' +
       '<div class="tier-pool-box__header">' +
-        '<div>' +
+        // 第一行：左侧池名称与图标，右侧席位占用比徽章
+        '<div class="tier-pool-box__header-top">' +
           '<div class="tier-pool-box__title"><i class="' + item.icon + ' c-brand"></i>' + escapeHtml(t.name) + '</div>' +
-          '<span class="tier-pool-box__alias"><i class="fas fa-route" style="margin-right: 4px;"></i>别名: ' + escapeHtml(t.alias) + '</span>' +
-        '</div>' +
-        '<div class="fc" style="gap: 6px;">' +
           '<span class="tier-seat-badge ' + (isFull ? 'tier-seat-badge--full' : '') + '">' + models.length + ' / ' + t.maxSeats + ' 席位</span>' +
         '</div>' +
-      '</div>' +
-
-      '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 13px;">' +
-        '<label style="color: var(--color-muted); font-size: 12px;"><i class="fas fa-chair" style="margin-right: 4px;"></i>配置最大席位数:</label>' +
-        '<input type="number" min="1" max="50" value="' + t.maxSeats + '" data-tier="' + item.key + '" style="width: 70px; height: 28px; padding: 2px 6px; font-size: 13px;" onchange="updateTierSeats(this.dataset.tier, this.value)" title="修改席位（缩容时自动移出多余模型，不触发冷却与探测）">' +
+        // 第二行：左侧梯队别名路由标签，右侧席位上限快速调节微调框（紧凑对称并排）
+        '<div class="tier-pool-box__header-sub">' +
+          '<span class="tier-pool-box__alias"><i class="fas fa-route" style="margin-right: 3px;"></i>别名: ' + escapeHtml(t.alias) + '</span>' +
+          '<div class="tier-pool-seats-ctrl">' +
+            '<label for="seats-' + item.key + '"><i class="fas fa-chair" style="margin-right: 3px;"></i>席位上限:</label>' +
+            '<input type="number" id="seats-' + item.key + '" min="1" max="50" value="' + t.maxSeats + '" data-tier="' + item.key + '" onchange="updateTierSeats(this.dataset.tier, this.value)" title="修改席位上限（缩容时自动移出多余模型，不触发冷却与探测）">' +
+          '</div>' +
+        '</div>' +
       '</div>' +
 
       '<div class="tier-model-list">' +
         (models.length > 0 ? models.map(function(m, idx) {
+          // 查找匹配当前模型的提供商名称
           const prov = stagedProviders.find(function(p) { return p.id === m.providerId })
           const pName = prov ? prov.name : m.providerId
           const cat = m.category || 'text'
@@ -1346,31 +1348,40 @@ function renderTierPools() {
           else if (cat === 'multimodal') catBadge = '<span class="cat-chip cat-chip--multimodal"><i class="fas fa-eye"></i>多模态</span>'
           else if (cat === 'other') catBadge = '<span class="cat-chip cat-chip--other"><i class="fas fa-cube"></i>其他</span>'
 
-          // 关键逻辑：从 latenciesMap 中匹配当前梯队席位模型的定时探测与真实用户调用双延迟，并在控制台直接渲染，方便调优
+          // 关键逻辑：从 latenciesMap 中匹配当前梯队席位模型的定时探测与真实用户调用双延迟
           const key = m.providerId + ':' + m.modelId
           const stats = (typeof latenciesMap !== 'undefined' && latenciesMap && latenciesMap[key]) || { probeLatency: null, realLatency: null }
           const probeMs = stats.probeLatency
           const realMs = stats.realLatency
 
-          const latHtml = '<div class="tier-model-latencies">' +
-            '<span class="latency-badge ' + (probeMs ? 'latency-badge--probe' : 'latency-badge--none') + '" title="最近巡检探测延迟">' +
-              '<i class="fas fa-bolt"></i>探测: ' + (probeMs ? probeMs + 'ms' : '未测') +
-            '</span>' +
-            '<span class="latency-badge ' + (realMs ? 'latency-badge--real' : 'latency-badge--none') + '" title="真实用户平均延迟">' +
-              '<i class="fas fa-chart-bar"></i>真实: ' + (realMs ? realMs + 'ms' : '无') +
-            '</span>' +
-          '</div>'
+          // 关键判断：智能精简延迟指示器，仅展示有实际意义的数值，杜绝满屏大灰方块造成的视觉杂乱
+          let latHtml = ''
+          if (realMs) {
+            latHtml += '<span class="latency-badge latency-badge--real" title="真实用户平均调用延迟"><i class="fas fa-chart-bar"></i>真实 ' + realMs + 'ms</span>'
+          }
+          if (probeMs) {
+            latHtml += '<span class="latency-badge latency-badge--probe" title="后台巡检定时探测延迟"><i class="fas fa-bolt"></i>' + probeMs + 'ms</span>'
+          }
+          if (!realMs && !probeMs) {
+            latHtml = '<span class="latency-badge latency-badge--none" title="暂无测速记录"><i class="fas fa-minus"></i>待测</span>'
+          }
 
+          // 统一标准规范的两行流式卡片：杜绝高矮不齐与错位换行
           return '<div class="tier-model-item">' +
-            '<div class="tier-model-item__info">' +
-              '<span class="tier-model-item__prov">' + escapeHtml(pName) + '</span>' +
-              '<strong>' + escapeHtml(m.modelId) + '</strong>' +
-              catBadge +
-              latHtml +
+            // 第一行：席位序号 + 提供商缩标 + 模型名称（单行超出省略） + 删除按钮
+            '<div class="tier-model-item__top">' +
+              '<span class="tier-model-idx">#' + (idx + 1) + '</span>' +
+              '<span class="tier-model-prov" title="提供商: ' + escapeHtml(pName) + '">' + escapeHtml(pName) + '</span>' +
+              '<span class="tier-model-name" title="' + escapeHtml(m.modelId) + '">' + escapeHtml(m.modelId) + '</span>' +
+              '<button class="tier-model-del" data-tier="' + item.key + '" data-idx="' + idx + '" onclick="removeModelFromTier(this.dataset.tier, parseInt(this.dataset.idx, 10))" title="移出梯队" aria-label="移出梯队">' +
+                '<i class="fas fa-times"></i>' +
+              '</button>' +
             '</div>' +
-            '<button class="icon-btn" data-tier="' + item.key + '" data-idx="' + idx + '" onclick="removeModelFromTier(this.dataset.tier, parseInt(this.dataset.idx, 10))" title="移出梯队" aria-label="移出梯队">' +
-              '<i class="fas fa-times"></i>' +
-            '</button>' +
+            // 第二行：左侧模型分类徽章 + 右侧测速状态指标
+            '<div class="tier-model-item__bottom">' +
+              catBadge +
+              '<div class="tier-model-latencies">' + latHtml + '</div>' +
+            '</div>' +
           '</div>'
         }).join('') : '<div style="text-align: center; padding: 18px 8px; color: var(--color-muted); font-size: 12px;"><i class="fas fa-inbox" style="margin-bottom: 4px; display: block; font-size: 16px;"></i>所有模型默认不入池，请在下方选择模型指派入席</div>') +
       '</div>' +
