@@ -1,9 +1,10 @@
 /**
- * 版本号: v1.0.48
+ * 版本号: v1.0.49
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
 import { getProviders, getProxyKeys, getTierConfig, getCustomRoutes, getTierModelLatencies } from './storage'
+import { getCombinedLogs } from './log'
 import { SITE_CONFIG, OPENCODE_DEFAULT_URL, DEFAULT_TIER_CONFIG } from './config'
 import type { Env, ModelCategory, TierConfig, TierPoolConfig } from './types'
 import { detectModelCategory } from './types'
@@ -102,8 +103,11 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
   // 辅助查找模型与供应商信息
   const provMap = new Map(providers.map(p => [p.id, p]))
 
-  // 顺风车并行查询三大梯队当前模型双延迟数据（探测延迟与真实用户数据延迟）
-  const latenciesMap = await getTierModelLatencies(c.env, tierConfig)
+  // 顺风车并行查询三大梯队当前模型双延迟数据与系统最新代理请求日志
+  const [latenciesMap, recentLogs] = await Promise.all([
+    getTierModelLatencies(c.env, tierConfig),
+    getCombinedLogs(c.env),
+  ])
 
   // 渲染单个梯队卡片列表
   const renderTierPoolSection = (tier: TierPoolConfig, icon: string, badgeLabel: string) => {
@@ -122,7 +126,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
 
       <div class="tier-model-list">
         ${isLoggedIn ? (list.length > 0 ? (() => {
-          // 查找梯队中真正处于在线健康状态（非禁用、非冷却、非熔断）的首个模型索引
+          // 1. 查找梯队中排在首位的在线健康模型（无历史调用时的默认首选）
           const nowMs = Date.now()
           const firstHealthyIdx = list.findIndex((mItem) => {
             const p = provMap.get(mItem.providerId)
@@ -133,6 +137,23 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
             if (rm.status === 'cooling' || (rm.cooldownUntil && rm.cooldownUntil > nowMs)) return false
             return true
           })
+
+          // 2. 从真实日志中匹配该梯队最近一次成功响应的提供商与模型 (100% 真实连接锚定)
+          const tierPrefix = tier.alias.split('/')[0]
+          let lastActiveModelKey: string | null = null
+          if (recentLogs && recentLogs.length > 0) {
+            for (const logItem of recentLogs) {
+              if (logItem.statusCode >= 200 && logItem.statusCode < 400 && logItem.model) {
+                if (logItem.model.includes(`(${tierPrefix}`) || logItem.model.includes(`(${tier.alias}`)) {
+                  const rawPart = logItem.model.split(' ')[0]
+                  if (rawPart && rawPart.includes('/')) {
+                    lastActiveModelKey = rawPart // 例如 "openai/gpt-4o"
+                    break
+                  }
+                }
+              }
+            }
+          }
 
           return list.map((item, idx) => {
             const prov = provMap.get(item.providerId)
@@ -153,13 +174,17 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
             }
             const clawTagHtml = isClaw ? `<span class="tier-claw-badge" title="OpenClaw 专属认证支持"><i class="fas fa-paw"></i>OpenClaw</span>` : ''
 
-            // 准确标注真正承接流量的网络连接状态（首个可用健康模型为【连接中】；若冷却或熔断则展示对应提示）
+            // 准确标注真正承接流量的网络连接状态（基于真实调用日志锚定）
             let activeBadgeHtml = ''
             const isDead = rawM?.status === 'dead'
             const isCooling = !isDead && (rawM?.status === 'cooling' || (rawM?.cooldownUntil && rawM.cooldownUntil > nowMs))
 
-            if (idx === firstHealthyIdx) {
-              activeBadgeHtml = `<span class="tier-active-badge" title="当前梯队首选调度输出模型（正在实时连接）"><span class="tier-active-dot"></span>连接中</span>`
+            const isRealtimeActive = lastActiveModelKey === fullId && !isDead && !isCooling
+
+            if (isRealtimeActive) {
+              activeBadgeHtml = `<span class="tier-active-badge" title="系统最新成功请求真实调用的连接节点"><span class="tier-active-dot"></span>实时连接中</span>`
+            } else if (!lastActiveModelKey && idx === firstHealthyIdx) {
+              activeBadgeHtml = `<span class="tier-active-badge" title="无历史请求时，当前梯队首选默认调度输出节点"><span class="tier-active-dot"></span>默认首选</span>`
             } else if (isCooling) {
               const leftMins = rawM?.cooldownUntil ? Math.max(1, Math.ceil((rawM.cooldownUntil - nowMs) / 60000)) : 10
               activeBadgeHtml = `<span class="tier-cooling-badge" title="模型故障冷却中，暂时跳过（剩余约 ${leftMins} 分钟）" style="color: #d97706; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 500;"><i class="fas fa-clock" style="margin-right: 3px;"></i>冷却中 (${leftMins}m)</span>`
