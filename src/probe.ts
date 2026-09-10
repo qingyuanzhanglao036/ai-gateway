@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.27
+ * 版本号: v1.0.28
  * 模块: 自动择优探测调度框架与梯队智能补位迭代引擎
  * 
  * 核心设计准则：
@@ -15,6 +15,7 @@
  * 4. KV 配额严格保护：探测过程中的状态变更与梯队变动在内存中计算，完成后搭顺风车一次性批量写入 KV。
  */
 import type { Env, Provider, ProbeResult, Model, TierConfig, TierKey } from './types'
+import { isModelOpenClawSupported } from './types'
 import {
   getProviders,
   setProviders,
@@ -467,10 +468,9 @@ export async function triggerTierRefill(
       // 检查是否已经在当前梯队中
       if (existingKeys.has(`${p.id}:::${m.id}`)) continue
 
-      // 核心准入约束：若是第二梯队（OpenClaw 专属模型池），必须具备 openclaw 专属标签，严禁普通模型浑水摸鱼进入
+      // 核心准入约束：若是第二梯队（OpenClaw 专属模型池），必须具备 openclaw 专属标签，严禁普通模型或手动取消的模型进入
       if (isTier2) {
-        const hasClawTag = (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id)
-        if (!hasClawTag) continue
+        if (!isModelOpenClawSupported(m)) continue
       }
 
       // 若是第三梯队（绘图专属），优先筛选绘图分类或全部可用候选

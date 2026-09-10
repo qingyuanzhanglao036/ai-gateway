@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.13
+ * 版本号: v1.0.14
  * 模块: AI Gateway 核心类型定义与模型智能分类辅助函数
  */
 
@@ -44,11 +44,16 @@ export interface Model {
 
 /**
  * 判断模型是否具备 OpenClaw 专属支持标签
+ * 强约束：若包含 'no-openclaw' 手动取消标签，执行一票否决权，绝对不允许作为 OpenClaw 模型入池
  */
 export function isModelOpenClawSupported(model: Model): boolean {
   if (!model) return false
+  // 强规则：如果被手动取消专属资格（no-openclaw），一票否决
+  if (Array.isArray(model.tags) && model.tags.includes('no-openclaw')) {
+    return false
+  }
   if (Array.isArray(model.tags) && model.tags.includes('openclaw')) return true
-  // 兼容 ID 显式包含 openclaw 特征
+  // 兼容 ID 显式包含 openclaw 特征（若有 no-openclaw 前面已经否决）
   if (typeof model.id === 'string' && /openclaw/i.test(model.id)) return true
   return false
 }

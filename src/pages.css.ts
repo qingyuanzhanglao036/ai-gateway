@@ -888,6 +888,11 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
   background: #f3efff;
   color: #512da8;
 }
+.model-mini-badge--cancel {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
 .model-mini-badge--btn {
   cursor: pointer;
   user-select: none;

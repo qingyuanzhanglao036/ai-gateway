@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.41
+ * 版本号: v1.0.42
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -1314,16 +1314,18 @@ function renderTierPools() {
   stagedProviders.forEach(function(p) {
     if (p.models && Array.isArray(p.models)) {
       p.models.forEach(function(m) {
-        // 关键逻辑：判定是否具备 OpenClaw 专属身份（包含 tags 标记、ID 正则、或当前在席第二梯队）
-        const inTier2 = stagedTiers.tier2 && Array.isArray(stagedTiers.tier2.models) &&
+        // 关键逻辑：若带有 no-openclaw 标记，则已被手动取消，一票否决
+        const isManualCanceled = Array.isArray(m.tags) && m.tags.includes('no-openclaw')
+        const inTier2 = !isManualCanceled && stagedTiers.tier2 && Array.isArray(stagedTiers.tier2.models) &&
           stagedTiers.tier2.models.some(function(tm) { return tm.providerId === p.id && tm.modelId === m.id })
-        const isClaw = inTier2 || (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id)
+        const isClaw = !isManualCanceled && (inTier2 || (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id))
         allAvailableModels.push({
           providerId: p.id,
           providerName: p.name || p.id,
           modelId: m.id,
           category: m.category || 'text',
-          isOpenClaw: isClaw
+          isOpenClaw: isClaw,
+          isManualCanceled: isManualCanceled
         })
       })
     }
@@ -1342,9 +1344,9 @@ function renderTierPools() {
     const isFull = models.length >= t.maxSeats
     const isTier2 = item.key === 'tier2'
 
-    // 关键逻辑：第二梯队（OpenClaw）在下拉框中进行前置筛选，仅提供带有 openclaw 专属标签的模型
+    // 关键逻辑：第二梯队（OpenClaw）前置筛选，仅提供带有 openclaw 专属标签且未被手动取消的模型
     const filteredCandidates = allAvailableModels.filter(function(m) {
-      if (isTier2) return m.isOpenClaw
+      if (isTier2) return m.isOpenClaw && !m.isManualCanceled
       return true
     })
 
@@ -1509,19 +1511,27 @@ function addModelToTier(tierKey) {
   // 获取模型分类与标签
   let cat = 'text'
   let isClaw = false
+  let isManualCanceled = false
   const prov = stagedProviders.find(function(p) { return p.id === providerId })
   if (prov && prov.models) {
     const mdl = prov.models.find(function(m) { return m.id === modelId })
     if (mdl) {
       if (mdl.category) cat = mdl.category
-      isClaw = (Array.isArray(mdl.tags) && mdl.tags.includes('openclaw')) || /openclaw/i.test(mdl.id)
+      isManualCanceled = Array.isArray(mdl.tags) && mdl.tags.includes('no-openclaw')
+      isClaw = !isManualCanceled && ((Array.isArray(mdl.tags) && mdl.tags.includes('openclaw')) || /openclaw/i.test(mdl.id))
     }
   }
 
-  // 关键准入限制：第二梯队（Tier2 OpenClaw）必须具备 openclaw 专属标签
-  if (tierKey === 'tier2' && !isClaw) {
-    toast('入席拦截：第二梯队为 OpenClaw 专属池，该模型未拥有 openclaw 专属标签，禁止加入！', 'error')
-    return
+  // 关键准入限制：第二梯队（Tier2 OpenClaw）必须具备 openclaw 专属标签且严禁手动取消模型
+  if (tierKey === 'tier2') {
+    if (isManualCanceled) {
+      toast('入席拦截：该模型已被【手动取消】OpenClaw 专属资格，禁止加入专属池！', 'error')
+      return
+    }
+    if (!isClaw) {
+      toast('入席拦截：第二梯队为 OpenClaw 专属池，该模型未拥有 openclaw 专属标签，禁止加入！', 'error')
+      return
+    }
   }
 
   t.models.push({
@@ -1911,13 +1921,20 @@ function renderProviderCard(p) {
         badge = '<span class="model-mini-badge model-mini-badge--warn" id="mstatus-' + p.id + '-' + mi + '" title="冷却中"><i class="fas fa-snowflake"></i>冷却中</span>'
       }
 
-      // 3. 判定模型是否具备 OpenClaw 专属标签（综合 tags、ID正则、或在席第二梯队池）
-      var inTier2 = window.stagedTiers && window.stagedTiers.tier2 && Array.isArray(window.stagedTiers.tier2.models) &&
+      // 3. 判定模型是否具备 OpenClaw 专属标签或处于手动取消状态
+      var isManualCanceled = Array.isArray(m.tags) && m.tags.includes('no-openclaw')
+      var inTier2 = !isManualCanceled && window.stagedTiers && window.stagedTiers.tier2 && Array.isArray(window.stagedTiers.tier2.models) &&
         window.stagedTiers.tier2.models.some(function(tm) { return tm.providerId === p.id && tm.modelId === m.id })
-      var hasClawTag = inTier2 || (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id)
-      var clawBadge = hasClawTag 
-        ? '<span class="model-mini-badge model-mini-badge--claw model-mini-badge--btn" id="mclaw-' + p.id + '-' + mi + '" onclick="toggleOpenClawTag(\\\'' + p.id + '\\\',\\\'' + escapeHtml(m.id) + '\\\',' + mi + ')" title="具备 OpenClaw 专属标签（点击可取消）"><i class="fas fa-robot"></i>OpenClaw</span>'
-        : '<span class="model-mini-badge model-mini-badge--muted model-mini-badge--btn" id="mclaw-' + p.id + '-' + mi + '" onclick="toggleOpenClawTag(\\\'' + p.id + '\\\',\\\'' + escapeHtml(m.id) + '\\\',' + mi + ')" title="普通模型（点击可赋予 OpenClaw 专属标签）"><i class="fas fa-cube"></i>普通</span>'
+      var hasClawTag = !isManualCanceled && (inTier2 || (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id))
+      
+      var clawBadge = ''
+      if (isManualCanceled) {
+        clawBadge = '<span class="model-mini-badge model-mini-badge--cancel model-mini-badge--btn" id="mclaw-' + p.id + '-' + mi + '" onclick="toggleOpenClawTag(\\\'' + p.id + '\\\',\\\'' + escapeHtml(m.id) + '\\\',' + mi + ')" title="已被手动取消 OpenClaw 专属资格（禁止入池，点击可重新恢复）"><i class="fas fa-ban"></i>手动取消</span>'
+      } else if (hasClawTag) {
+        clawBadge = '<span class="model-mini-badge model-mini-badge--claw model-mini-badge--btn" id="mclaw-' + p.id + '-' + mi + '" onclick="toggleOpenClawTag(\\\'' + p.id + '\\\',\\\'' + escapeHtml(m.id) + '\\\',' + mi + ')" title="具备 OpenClaw 专属标签（点击可手动取消）"><i class="fas fa-robot"></i>OpenClaw</span>'
+      } else {
+        clawBadge = '<span class="model-mini-badge model-mini-badge--muted model-mini-badge--btn" id="mclaw-' + p.id + '-' + mi + '" onclick="toggleOpenClawTag(\\\'' + p.id + '\\\',\\\'' + escapeHtml(m.id) + '\\\',' + mi + ')" title="普通模型（点击可赋予 OpenClaw 专属标签）"><i class="fas fa-cube"></i>普通</span>'
+      }
 
       // 4. 读取实时延迟探测信息
       var latencyVal = null
@@ -2126,15 +2143,21 @@ function getMdl(id) {
       status: old.status || 'healthy',
       failCount: typeof old.failCount === 'number' ? old.failCount : 0
     })
-    // 标签同步：若内存 tags、DOM 元素状态或第二梯队在席状态标记为专属，则统一同步 tags 数组
+    // 标签同步：若 DOM 元素状态为手动取消，保持 no-openclaw；若为专属或在席第二梯队，同步 openclaw
     var clawEl = document.getElementById('mclaw-' + id + '-' + idx)
+    var isDomCancel = clawEl ? clawEl.classList.contains('model-mini-badge--cancel') : false
     var isDomClaw = clawEl ? clawEl.classList.contains('model-mini-badge--claw') : false
-    var inTier2 = window.stagedTiers && window.stagedTiers.tier2 && Array.isArray(window.stagedTiers.tier2.models) &&
+    var inTier2 = !isDomCancel && window.stagedTiers && window.stagedTiers.tier2 && Array.isArray(window.stagedTiers.tier2.models) &&
       window.stagedTiers.tier2.models.some(function(tm) { return tm.providerId === id && tm.modelId === mid })
     var currentTags = Array.isArray(old.tags) ? old.tags.slice() : []
-    if ((isDomClaw || inTier2) && !currentTags.includes('openclaw')) {
-      currentTags.push('openclaw')
-    } else if (!isDomClaw && !inTier2 && currentTags.includes('openclaw')) {
+    
+    if (isDomCancel) {
+      currentTags = currentTags.filter(function(t) { return t !== 'openclaw' })
+      if (!currentTags.includes('no-openclaw')) currentTags.push('no-openclaw')
+    } else if (isDomClaw || inTier2) {
+      currentTags = currentTags.filter(function(t) { return t !== 'no-openclaw' })
+      if (!currentTags.includes('openclaw')) currentTags.push('openclaw')
+    } else {
       currentTags = currentTags.filter(function(t) { return t !== 'openclaw' })
     }
     res.tags = currentTags
@@ -2261,7 +2284,7 @@ function unblockModel(providerId, modelId, modelIdx) {
   toast('已成功解封模型【' + modelId + '】，连续失败计数器已清零（暂存中，需统一保存生效）', 'success')
 }
 
-// 手动切换模型的 OpenClaw 专属标签；若取消标签且模型在 Tier2 池中，则弹出清晰确认提示并联动自动移出池
+// 手动切换模型的 OpenClaw 专属标签与手动取消一票否决状态
 function toggleOpenClawTag(providerId, modelId, modelIdx) {
   var p = stagedProviders.find(function(x) { return x.id === providerId })
   if (!p || !p.models) return
@@ -2270,7 +2293,7 @@ function toggleOpenClawTag(providerId, modelId, modelIdx) {
   if (!m) return
   if (mIdx < 0) mIdx = p.models.indexOf(m)
 
-  // 综合判定是否具备专属身份（包含 tags 包含 openclaw、ID 正则匹配 openclaw、或当前正在第二梯队池中）
+  // 判定是否正在第二梯队（OpenClaw 专属池）中
   var inTier2 = false
   var tier2Idx = -1
   if (window.stagedTiers && window.stagedTiers.tier2 && Array.isArray(window.stagedTiers.tier2.models)) {
@@ -2279,21 +2302,27 @@ function toggleOpenClawTag(providerId, modelId, modelIdx) {
     })
     inTier2 = tier2Idx >= 0
   }
-  var hasTag = inTier2 || (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id)
+
+  var isManualCanceled = Array.isArray(m.tags) && m.tags.includes('no-openclaw')
+  var hasTag = !isManualCanceled && (inTier2 || (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id))
   
   if (hasTag) {
-    // 准备取消专属标签：检查是否在第二梯队（OpenClaw 专属模型池）中
+    // 状态 1：当前为 OpenClaw 专属 -> 执行【手动取消】
     var tipMsg = inTier2
-      ? '【确认取消 OpenClaw 专属标签】\\n\\n模型【' + m.id + '】当前正在第二梯队（OpenClaw专属池）在席运行。\\n\\n取消专属标签后，系统将自动把该模型从第二梯队中移除，确保池内仅保留专属认证模型。\\n\\n是否确认取消并从专属池中移除？'
-      : '【确认取消 OpenClaw 专属标签】\\n\\n是否确定取消模型【' + m.id + '】的 OpenClaw 专属标签？'
+      ? '【确认手动取消 OpenClaw 专属标签】\\n\\n模型【' + m.id + '】当前正在第二梯队（OpenClaw专属池）在席运行。\\n\\n手动取消后：\\n1. 标签将切换为【🚫 手动取消】；\\n2. 自动将其从第二梯队中移除；\\n3. 系统在自动补位和候选下拉中将绝对禁止其进入 OpenClaw 池。\\n\\n是否确认取消？'
+      : '【确认手动取消 OpenClaw 专属标签】\\n\\n确定要取消模型【' + m.id + '】的 OpenClaw 专属资格吗？\\n\\n取消后将标记为【🚫 手动取消】，且系统将绝对禁止其进入 OpenClaw 专属池。'
     
     if (!confirm(tipMsg)) {
       return
     }
 
-    // 从 tags 数组中移除 openclaw
-    if (Array.isArray(m.tags)) {
-      m.tags = m.tags.filter(function(t) { return t !== 'openclaw' })
+    if (!Array.isArray(m.tags)) {
+      m.tags = []
+    }
+    // 移除 openclaw，加入 no-openclaw 禁令标记
+    m.tags = m.tags.filter(function(t) { return t !== 'openclaw' })
+    if (!m.tags.includes('no-openclaw')) {
+      m.tags.push('no-openclaw')
     }
 
     // 联动逻辑：如果正在 Tier2 池中，联动将其移出梯队池
@@ -2301,24 +2330,31 @@ function toggleOpenClawTag(providerId, modelId, modelIdx) {
       window.stagedTiers.tier2.models.splice(tier2Idx, 1)
     }
 
-    // 更新当前模型卡片上的徽章显示
+    // 更新当前模型卡片上的徽章显示为【手动取消】
     var clawBadgeEl = document.getElementById('mclaw-' + providerId + '-' + mIdx)
     if (clawBadgeEl) {
-      clawBadgeEl.className = 'model-mini-badge model-mini-badge--muted model-mini-badge--btn'
-      clawBadgeEl.innerHTML = '<i class="fas fa-cube"></i>普通'
-      clawBadgeEl.title = '未具备 OpenClaw 标签（点击赋予专属标签）'
+      clawBadgeEl.className = 'model-mini-badge model-mini-badge--cancel model-mini-badge--btn'
+      clawBadgeEl.innerHTML = '<i class="fas fa-ban"></i>手动取消'
+      clawBadgeEl.title = '已被手动取消 OpenClaw 专属资格（禁止入池，点击可重新恢复）'
     }
 
-    // 刷新梯队池（第二梯队卡片与下拉备选列表即时同步联动）
+    // 刷新梯队池（第二梯队卡片与下拉备选列表即时同步联动，排除该模型）
     if (typeof renderTierPools === 'function') {
       renderTierPools()
     }
 
     markUnsaved()
-    toast('已取消模型【' + m.id + '】专属标签' + (inTier2 ? '，并已从第二梯队池中移除' : '') + '（暂存中）', 'info')
-  } else {
-    // 手动赋予专属标签
-    if (!Array.isArray(m.tags)) {
+    toast('已手动取消模型【' + m.id + '】专属资格' + (inTier2 ? '，并已从第二梯队池中移除' : '') + '（暂存中）', 'info')
+  } else if (isManualCanceled) {
+    // 状态 2：当前处于【手动取消】状态 -> 执行【重新恢复】
+    var tipMsg = '【恢复 OpenClaw 专属资格】\\n\\n是否重新恢复模型【' + m.id + '】的 OpenClaw 专属资格？'
+    if (!confirm(tipMsg)) {
+      return
+    }
+
+    if (Array.isArray(m.tags)) {
+      m.tags = m.tags.filter(function(t) { return t !== 'no-openclaw' })
+    } else {
       m.tags = []
     }
     if (!m.tags.includes('openclaw')) {
@@ -2330,10 +2366,35 @@ function toggleOpenClawTag(providerId, modelId, modelIdx) {
     if (clawBadgeEl) {
       clawBadgeEl.className = 'model-mini-badge model-mini-badge--claw model-mini-badge--btn'
       clawBadgeEl.innerHTML = '<i class="fas fa-robot"></i>OpenClaw'
-      clawBadgeEl.title = '已具备 OpenClaw 专属标签（点击取消专属标签）'
+      clawBadgeEl.title = '具备 OpenClaw 专属标签（点击可手动取消）'
     }
 
-    // 刷新梯队池（第二梯队卡片与下拉备选列表即时同步联动，候选下拉框立即出现该模型）
+    // 刷新梯队池
+    if (typeof renderTierPools === 'function') {
+      renderTierPools()
+    }
+
+    markUnsaved()
+    toast('已重新恢复模型【' + m.id + '】的 OpenClaw 专属资格（暂存中）', 'success')
+  } else {
+    // 状态 3：普通模型 -> 手动赋予专属标签
+    if (!Array.isArray(m.tags)) {
+      m.tags = []
+    }
+    m.tags = m.tags.filter(function(t) { return t !== 'no-openclaw' })
+    if (!m.tags.includes('openclaw')) {
+      m.tags.push('openclaw')
+    }
+
+    // 更新徽章显示为 OpenClaw
+    var clawBadgeEl = document.getElementById('mclaw-' + providerId + '-' + mIdx)
+    if (clawBadgeEl) {
+      clawBadgeEl.className = 'model-mini-badge model-mini-badge--claw model-mini-badge--btn'
+      clawBadgeEl.innerHTML = '<i class="fas fa-robot"></i>OpenClaw'
+      clawBadgeEl.title = '具备 OpenClaw 专属标签（点击可手动取消）'
+    }
+
+    // 刷新梯队池（第二梯队备选列表即时同步联动，候选下拉框立即出现该模型）
     if (typeof renderTierPools === 'function') {
       renderTierPools()
     }
