@@ -1,14 +1,14 @@
 /**
- * 版本号: v1.0.3
- * 模块: 内存日志管理、调试开关控制与正式模式内存缓存批量落盘
+ * 版本号: v1.0.4
+ * 模块: 内存日志管理、错误直接落盘、顺风车打包落盘与跨节点日志读取
  */
 import type { Env, LogEntry, DebugConfig } from './types'
 import { KV_KEYS } from './config'
 
-// 内存日志最大缓存条数，避免内存占用过大，超出自动丢弃旧日志
-const MAX_MEMORY_LOGS = 100
+// 内存日志最大缓存条数，保留最新 50 条，控制体积
+const MAX_MEMORY_LOGS = 50
 
-// 内存日志列表（绝不写入 KV，0 存储成本）
+// 内存日志列表（当前 Worker 实例局部队列）
 const memoryLogs: LogEntry[] = []
 
 // 调试与缓存配置（默认处于正式模式，支持后台动态自定义）
@@ -30,17 +30,9 @@ const pendingHealthCache: Record<string, HealthMap> = {}
 let pendingItemsCount = 0
 
 /**
- * 记录一次代理请求日志
- * 调试模式下：仅记录报错和超时请求，并在前端展示
+ * 记录一次代理请求日志（普通存入当前实例内存）
  */
-export function recordLog(data: Omit<LogEntry, 'id'>): void {
-  // 判断当前是否处于调试模式
-  if (debugConfig.debugMode) {
-    // 调试模式只保留报错 (状态码 >= 400) 或有明确失败原因/超时的日志
-    const isErrorOrTimeout = data.statusCode >= 400 || (data.failReason && data.failReason !== '-')
-    if (!isErrorOrTimeout) return
-  }
-
+export function recordLog(data: Omit<LogEntry, 'id'>): LogEntry {
   // 生成唯一日志项
   const entry: LogEntry = {
     id: crypto.randomUUID(),
@@ -52,21 +44,111 @@ export function recordLog(data: Omit<LogEntry, 'id'>): void {
     memoryLogs.shift()
   }
   memoryLogs.push(entry)
+  return entry
 }
 
 /**
- * 获取当前所有内存日志
+ * 记录错误/超时等异常请求日志（直接写入 KV，确保故障排查不丢失）
  */
-export function getMemoryLogs(): LogEntry[] {
-  // 按时间倒序返回，最新的在最前面
-  return [...memoryLogs].reverse()
+export async function recordErrorLogDirect(env: Env, data: Omit<LogEntry, 'id'>): Promise<LogEntry> {
+  // 1. 先记录到内存队列
+  const entry = recordLog(data)
+
+  // 2. 直接触发一次 KV 顺风车落盘合并写入
+  try {
+    await flushLogsToKv(env)
+  } catch (err) {
+    console.error('[log] 错误日志直接写入 KV 失败:', err)
+  }
+
+  return entry
 }
 
 /**
- * 清空内存日志
+ * 顺风车打包落盘：将内存中积攒的日志与 KV 中的日志合并写入（最多保留最近50条）
+ * 严格控制 KV 写入次数，仅在系统有必要写操作或产生错误时调用
  */
-export function clearMemoryLogs(): void {
+export async function flushLogsToKv(env: Env): Promise<void> {
+  if (memoryLogs.length === 0) return
+
+  try {
+    // 1. 读取 KV 中现存的历史日志
+    const raw = await env.KV.get(KV_KEYS.SYSTEM_RECENT_LOGS)
+    let kvLogs: LogEntry[] = []
+    if (raw) {
+      try {
+        kvLogs = JSON.parse(raw) as LogEntry[]
+      } catch {
+        kvLogs = []
+      }
+    }
+
+    // 2. 合并当前内存日志与 KV 历史日志，按 id 去重
+    const logMap = new Map<string, LogEntry>()
+    for (const item of kvLogs) {
+      if (item && item.id) logMap.set(item.id, item)
+    }
+    for (const item of memoryLogs) {
+      if (item && item.id) logMap.set(item.id, item)
+    }
+
+    // 3. 转换为数组，按时间倒序排序，最多保留 50 条
+    const merged = Array.from(logMap.values())
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, MAX_MEMORY_LOGS)
+
+    // 4. 一次性写入 KV
+    await env.KV.put(KV_KEYS.SYSTEM_RECENT_LOGS, JSON.stringify(merged))
+  } catch (err) {
+    console.error('[log] 顺风车落盘日志至 KV 异常:', err)
+  }
+}
+
+/**
+ * 获取跨节点合并后的所有最新日志（合并 KV 存储与当前内存）
+ */
+export async function getCombinedLogs(env: Env): Promise<LogEntry[]> {
+  try {
+    // 1. 从 KV 中读取持久化的日志
+    const raw = await env.KV.get(KV_KEYS.SYSTEM_RECENT_LOGS)
+    let kvLogs: LogEntry[] = []
+    if (raw) {
+      try {
+        kvLogs = JSON.parse(raw) as LogEntry[]
+      } catch {
+        kvLogs = []
+      }
+    }
+
+    // 2. 与当前内存日志合并去重
+    const logMap = new Map<string, LogEntry>()
+    for (const item of kvLogs) {
+      if (item && item.id) logMap.set(item.id, item)
+    }
+    for (const item of memoryLogs) {
+      if (item && item.id) logMap.set(item.id, item)
+    }
+
+    // 3. 倒序排列返回最新的日志
+    return Array.from(logMap.values())
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, MAX_MEMORY_LOGS)
+  } catch (err) {
+    // 若读取 KV 失败，降级返回内存日志
+    return [...memoryLogs].reverse()
+  }
+}
+
+/**
+ * 清空所有日志（同时清空内存与 KV）
+ */
+export async function clearAllLogs(env: Env): Promise<void> {
   memoryLogs.length = 0
+  try {
+    await env.KV.delete(KV_KEYS.SYSTEM_RECENT_LOGS)
+  } catch (err) {
+    console.error('[log] 清空 KV 日志异常:', err)
+  }
 }
 
 /**
@@ -151,7 +233,10 @@ export async function flushPendingHealthCache(env: Env): Promise<void> {
   // 更新最后落盘时间戳
   lastFlushTimestamp = Date.now()
 
-  // 如果没有积压的缓存，直接退出
+  // 顺风车一起打包刷写日志
+  await flushLogsToKv(env)
+
+  // 如果没有积压的健康缓存，直接退出
   if (pendingItemsCount === 0 && Object.keys(pendingHealthCache).length === 0) {
     return
   }

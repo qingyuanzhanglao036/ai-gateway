@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.12
+ * 版本号: v1.0.13
  * 模块: API 代理请求转发、健康探测、梯队路由调度与会话专属调度粘性策略
  */
 import { Context } from 'hono'
@@ -25,7 +25,7 @@ import {
 } from './config'
 import type { Env, ProxyRequestBody, TierKey, Provider, TierConfig } from './types'
 import { isOpenCodeProvider, proxyOpenCodeRequest, resolveOpenCodeUrls } from './opencode'
-import { recordLog, queueHealthUpdate, checkAndFlushOnRequest } from './log'
+import { recordLog, recordErrorLogDirect, queueHealthUpdate, checkAndFlushOnRequest } from './log'
 
 // ===== Key 健康状态类型和辅助函数 =====
 
@@ -347,9 +347,10 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
   const maskedKey = rawKey.length > 10 ? rawKey.slice(0, 6) + '...' + rawKey.slice(-4) : rawKey
   let selectedModel = 'unknown'
 
-  // 辅助函数：统一记录内存日志并触发 Worker 后置落盘检查
+  // 辅助函数：统一记录日志（报错与超时直接写入 KV，正常成功存入内存并触发后置落盘与顺风车）
   const finishAndLog = async (statusCode: number, failReason: string = '-') => {
-    recordLog({
+    const isErrorOrTimeout = statusCode >= 400 || (failReason && failReason !== '-')
+    const logData = {
       timestamp: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
       model: selectedModel,
       key: maskedKey,
@@ -357,7 +358,16 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
       statusCode,
       failReason,
       ip: clientIp,
-    })
+    }
+
+    if (isErrorOrTimeout) {
+      // 错误、超时等连接异常日志：直接写入/立即持久化至 KV
+      await recordErrorLogDirect(c.env, logData)
+    } else {
+      // 正常成功调用日志：记录到当前实例内存
+      recordLog(logData)
+    }
+
     // 每次请求后置校验落盘条件（解决 Cloudflare Worker 无常驻后台的问题）
     await checkAndFlushOnRequest(c.env)
   }

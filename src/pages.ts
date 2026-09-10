@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.40
+ * 版本号: v1.0.41
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -2924,11 +2924,12 @@ async function fetchLogs() {
       }
       const logs = d.data.logs || []
       if (logs.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--color-muted);">暂无日志记录（调试模式下会实时记录报错与超时）</td></tr>'
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--color-muted);">暂无日志记录（错误及超时会自动直接写入，正常调用随顺风车打包落盘）</td></tr>'
         return
       }
       tbody.innerHTML = logs.map(function(log) {
-        const timeStr = new Date(log.timestamp).toLocaleString()
+        const parsedTime = new Date(log.timestamp)
+        const timeStr = isNaN(parsedTime.getTime()) ? escapeHtml(log.timestamp) : parsedTime.toLocaleString()
         const statusClass = (log.statusCode >= 200 && log.statusCode < 400) ? 'status-chip--ok' : 'status-chip--err'
         return '<tr>' +
           '<td>' + escapeHtml(timeStr) + '</td>' +
@@ -2947,7 +2948,7 @@ async function fetchLogs() {
 }
 
 async function clearLogs() {
-  if (!(await cM('确定要清空内存中保存的日志吗？'))) return
+  if (!(await cM('确定要清空系统中保存的所有调用日志吗？'))) return
   try {
     const res = await fetch('/admin/api/logs', { method: 'DELETE' })
     const d = await res.json()

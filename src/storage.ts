@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.24
+ * 版本号: v1.0.25
  * 模块: 数据持久化层（KV 存储读写与顺风车打包）
  */
 import {
@@ -8,6 +8,7 @@ import {
   MAX_SESSION_STICKINESS_HISTORY,
   SESSION_STICKINESS_TTL_SECONDS,
 } from './config'
+import { flushLogsToKv } from './log'
 import type {
   Env,
   Provider,
@@ -93,6 +94,9 @@ export async function recordSessionSuccessModel(
   await env.KV.put(key, JSON.stringify(record), {
     expirationTtl: SESSION_STICKINESS_TTL_SECONDS,
   })
+
+  // 顺风车检查并打包内存中暂存的日志一同持久化至 KV
+  await flushLogsToKv(env)
 }
 
 // ===== 游标、探测日志与真实业务延迟持久化（三大隔离数据通道） =====
@@ -175,6 +179,9 @@ export async function recordBusinessLatency(
   stats.lastUpdated = Date.now()
 
   await env.KV.put(key, JSON.stringify(stats))
+
+  // 顺风车检查并打包内存中暂存的日志一同持久化至 KV
+  await flushLogsToKv(env)
 }
 
 // ===== 梯队池 CRUD =====

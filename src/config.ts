@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.40
+ * 版本号: v1.0.41
  * 模块: 系统常量、KV键名及三大梯队默认配置
  */
 import type { Provider, TierConfig } from './types'
@@ -8,7 +8,7 @@ import type { Provider, TierConfig } from './types'
 export const SITE_CONFIG = {
   title: 'AI Gateway',
   subtitle: '统一的 AI 管理平台',
-  version: 'v1.0.40', // 主页显示的最新系统版本号
+  version: 'v1.0.41', // 主页显示的最新系统版本号
   author: 'QingYun',
   authorUrl: 'https://github.com/yutian81/ai-gateway',
   blogUrl: 'https://blog.notett.com',
@@ -65,6 +65,7 @@ export const KV_KEYS = {
   SESSION_PREFIX: 'admin:session:',
   KEY_HEALTH_PREFIX: 'key:health:',
   OPENCODE_MIGRATION: 'migration:opencode-default:v1',
+  SYSTEM_RECENT_LOGS: 'logs:recent',              // 顺风车持久化日志（最多保留最近50条，跨节点共享）
 } as const
 
 // 默认三大梯队池配置（默认所有模型均不入池，席位数严格为 9 / 6 / 6）

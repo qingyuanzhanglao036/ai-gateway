@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.12
+ * 版本号: v1.0.13
  * 模块: 管理后台核心 API 处理函数（提供商/Key管理、梯队池、统一批量保存与日志调试）
  */
 import { Context } from 'hono'
@@ -23,7 +23,7 @@ import {
 import { testModelConnection } from './proxy'
 import { fetchOpenCodeModels, isOpenCodeProvider, resolveOpenCodeUrls, testOpenCodeModel } from './opencode'
 import { PROXY_KEY_PREFIX, EXPIRY_OPTIONS, OPENCODE_DEFAULT_URL } from './config'
-import { getMemoryLogs, clearMemoryLogs, getDebugConfig, updateDebugConfig } from './log'
+import { getCombinedLogs, clearAllLogs, flushLogsToKv, getDebugConfig, updateDebugConfig } from './log'
 import type {
   Env,
   ApiResponse,
@@ -402,6 +402,9 @@ export async function handleBatchSave(c: Context<{ Bindings: Env }>) {
       await updateDebugConfig(c.env, body.debugConfig)
     }
 
+    // 6. 顺风车检查并打包内存中暂存的所有调用日志统一持久化写入 KV
+    await flushLogsToKv(c.env)
+
     return c.json<ApiResponse>({
       success: true,
       message: '所有配置已统一保存并写入 Cloudflare KV',
@@ -417,11 +420,11 @@ export async function handleBatchSave(c: Context<{ Bindings: Env }>) {
 }
 
 /**
- * 获取内存日志及当前调试与缓存配置
+ * 获取跨节点持久化与内存合并的最新日志及当前调试配置
  */
 export async function handleGetLogs(c: Context<{ Bindings: Env }>) {
-  // 从内存中读取最新日志列表与配置
-  const logs = getMemoryLogs()
+  // 从 KV 与内存中合并读取最新日志列表（跨节点共享）与配置
+  const logs = await getCombinedLogs(c.env)
   const debugConfig = getDebugConfig()
 
   return c.json<ApiResponse<{ logs: typeof logs; debugConfig: DebugConfig }>>({
@@ -434,13 +437,13 @@ export async function handleGetLogs(c: Context<{ Bindings: Env }>) {
 }
 
 /**
- * 清空内存中的日志列表
+ * 清空所有日志列表（同时清空内存与 KV 持久化）
  */
 export async function handleClearLogs(c: Context<{ Bindings: Env }>) {
-  clearMemoryLogs()
+  await clearAllLogs(c.env)
   return c.json<ApiResponse>({
     success: true,
-    message: '内存日志已清空',
+    message: '所有日志已清空',
   })
 }
 
