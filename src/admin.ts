@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.13
+ * 版本号: v1.0.14
  * 模块: 管理后台核心 API 处理函数（提供商/Key管理、梯队池、统一批量保存与日志调试）
  */
 import { Context } from 'hono'
@@ -34,6 +34,8 @@ import type {
   TestModelRequest,
   BatchSaveRequest,
   DebugConfig,
+  TierConfig,
+  TierModelEntry,
 } from './types'
 
 // ===== 系统状态 =====
@@ -376,38 +378,54 @@ export async function handleUpdateProxyKey(c: Context<{ Bindings: Env }>) {
 export async function handleBatchSave(c: Context<{ Bindings: Env }>) {
   try {
     const body = await c.req.json<BatchSaveRequest>()
+    const tasks: Promise<any>[] = []
 
     // 1. 若提交了提供商数组，批量持久化写入 KV
     if (body.providers && Array.isArray(body.providers)) {
-      await setProviders(c.env, body.providers)
+      tasks.push(setProviders(c.env, body.providers))
     }
 
     // 2. 若提交了转发 Key 数组，批量持久化写入 KV
     if (body.proxyKeys && Array.isArray(body.proxyKeys)) {
-      await setProxyKeys(c.env, body.proxyKeys)
+      tasks.push(setProxyKeys(c.env, body.proxyKeys))
     }
 
-    // 3. 若提交了三大梯队配置，搭顺风车批量持久化写入 KV（节省免费 KV 写次数）
+    // 3. 若提交了三大梯队配置，搭顺风车批量持久化写入 KV（保存前坚决清退第二梯队中被手动取消的模型）
     if (body.tiers && typeof body.tiers === 'object') {
-      await setTierConfig(c.env, body.tiers)
+      const rawTiers = body.tiers as TierConfig
+      const providers = Array.isArray(body.providers) ? body.providers : await getProviders(c.env)
+      if (rawTiers.tier2 && Array.isArray(rawTiers.tier2.models)) {
+        rawTiers.tier2.models = rawTiers.tier2.models.filter((tm: TierModelEntry) => {
+          const prov = providers.find(p => p.id === tm.providerId)
+          if (!prov || !prov.models) return true
+          const mdl = prov.models.find(m => m.id === tm.modelId)
+          if (!mdl) return true
+          const isCanceled = Array.isArray(mdl.tags) && mdl.tags.includes('no-openclaw')
+          return !isCanceled // 严格清退手动取消的模型
+        })
+      }
+      tasks.push(setTierConfig(c.env, rawTiers))
     }
 
     // 4. 若提交了自定义路由规则，搭顺风车批量持久化写入 KV
     if (body.customRoutes && Array.isArray(body.customRoutes)) {
-      await setCustomRoutes(c.env, body.customRoutes)
+      tasks.push(setCustomRoutes(c.env, body.customRoutes))
     }
 
     // 5. 若提交了调试模式与缓存配置，同步更新并执行可能需要的即时落盘
     if (body.debugConfig) {
-      await updateDebugConfig(c.env, body.debugConfig)
+      tasks.push(updateDebugConfig(c.env, body.debugConfig))
     }
 
-    // 6. 顺风车检查并打包内存中暂存的所有调用日志统一持久化写入 KV
-    await flushLogsToKv(c.env)
+    // 6. 全局顺风车打包：将内存中积攒的日志与系统缓存统一打包写入 KV，完全避免多余的 KV 写入请求
+    tasks.push(flushLogsToKv(c.env))
+
+    // 并行批量统一完成所有写入，极大提升响应速度并节省 KV 配额
+    await Promise.all(tasks)
 
     return c.json<ApiResponse>({
       success: true,
-      message: '所有配置已统一保存并写入 Cloudflare KV',
+      message: '所有配置已全局顺风车打包统一写入 Cloudflare KV',
     })
   } catch (err) {
     // 捕获异常，明确提示错误，不丢弃前端数据
