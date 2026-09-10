@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.28
+ * 版本号: v1.0.29
  * 模块: 自动择优探测调度框架与梯队智能补位迭代引擎
  * 
  * 核心设计准则：
@@ -312,6 +312,8 @@ export async function runOpenClawProbe(
       if (!p.enabled) continue
       for (const m of p.models) {
         if (!m.enabled) continue
+        const isCanceled = Array.isArray(m.tags) && m.tags.includes('no-openclaw')
+        if (isCanceled) continue // 一票否决：手动取消的模型绝不自动探测入池
         const hasTag = Array.isArray(m.tags) && m.tags.includes('openclaw')
         if (!hasTag) {
           candidateProvider = p
@@ -326,7 +328,16 @@ export async function runOpenClawProbe(
   if (!candidateProvider || !candidateModel) {
     return {
       success: false,
-      message: '无待探测的 OpenClaw 候选模型（所有模型已具备标签或无可用模型），已安全终止探测',
+      message: '无待探测的 OpenClaw 候选模型（所有模型已具备标签、已被手动取消或无可用模型），已安全终止探测',
+    }
+  }
+
+  // 若目标模型已被手动取消，禁止自动打标
+  const isTargetCanceled = Array.isArray(candidateModel.tags) && candidateModel.tags.includes('no-openclaw')
+  if (isTargetCanceled) {
+    return {
+      success: false,
+      message: `模型【${candidateModel.id}】已被管理员手动取消 OpenClaw 专属资格，禁止自动探测打标！`,
     }
   }
 

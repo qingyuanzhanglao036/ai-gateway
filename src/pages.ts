@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.42
+ * 版本号: v1.0.43
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -1028,13 +1028,19 @@ ${H('管理')}
                     statusBadge = `<span class="model-mini-badge model-mini-badge--warn" id="mstatus-${escapePageHtml(p.id)}-${mi}" title="冷却中"><i class="fas fa-snowflake"></i>冷却中</span>`
                   }
 
-                  // 4. 智能匹配在席 OpenClaw 池或专属标签，赋予点击切换能力
-                  const isOpenClaw = (Array.isArray(m.tags) && m.tags.includes('openclaw')) ||
+                  // 4. 智能匹配在席 OpenClaw 池或专属标签，或者手动取消状态，赋予点击切换能力
+                  const isManualCanceled = Array.isArray(m.tags) && m.tags.includes('no-openclaw')
+                  const isOpenClaw = !isManualCanceled && (
+                    (Array.isArray(m.tags) && m.tags.includes('openclaw')) ||
                     /openclaw/i.test(m.id) ||
                     Boolean(tierConfig.tier2?.models?.some(tm => tm.providerId === p.id && tm.modelId === m.id))
-                  const clawBadge = isOpenClaw 
-                    ? `<span class="model-mini-badge model-mini-badge--claw model-mini-badge--btn" id="mclaw-${escapePageHtml(p.id)}-${mi}" onclick="toggleOpenClawTag('${escapePageHtml(p.id)}','${escapePageHtml(m.id)}',${mi})" title="具备 OpenClaw 专属标签（点击可取消）"><i class="fas fa-robot"></i>OpenClaw</span>`
-                    : `<span class="model-mini-badge model-mini-badge--muted model-mini-badge--btn" id="mclaw-${escapePageHtml(p.id)}-${mi}" onclick="toggleOpenClawTag('${escapePageHtml(p.id)}','${escapePageHtml(m.id)}',${mi})" title="普通模型（点击可赋予 OpenClaw 专属标签）"><i class="fas fa-cube"></i>普通</span>`
+                  )
+                  let clawBadge = `<span class="model-mini-badge model-mini-badge--muted model-mini-badge--btn" id="mclaw-${escapePageHtml(p.id)}-${mi}" onclick="toggleOpenClawTag('${escapePageHtml(p.id)}','${escapePageHtml(m.id)}',${mi})" title="普通模型（点击可赋予 OpenClaw 专属标签）"><i class="fas fa-cube"></i>普通</span>`
+                  if (isManualCanceled) {
+                    clawBadge = `<span class="model-mini-badge model-mini-badge--cancel model-mini-badge--btn" id="mclaw-${escapePageHtml(p.id)}-${mi}" onclick="toggleOpenClawTag('${escapePageHtml(p.id)}','${escapePageHtml(m.id)}',${mi})" title="已被手动取消 OpenClaw 专属资格（禁止入池，点击可重新恢复）"><i class="fas fa-ban"></i>手动取消</span>`
+                  } else if (isOpenClaw) {
+                    clawBadge = `<span class="model-mini-badge model-mini-badge--claw model-mini-badge--btn" id="mclaw-${escapePageHtml(p.id)}-${mi}" onclick="toggleOpenClawTag('${escapePageHtml(p.id)}','${escapePageHtml(m.id)}',${mi})" title="具备 OpenClaw 专属标签（点击可手动取消）"><i class="fas fa-robot"></i>OpenClaw</span>`
+                  }
 
                   // 5. 拉取并展示当前模型最近的自动海选或真实用户双延迟数据
                   const key = `${p.id}:${m.id}`
@@ -2307,15 +2313,7 @@ function toggleOpenClawTag(providerId, modelId, modelIdx) {
   var hasTag = !isManualCanceled && (inTier2 || (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id))
   
   if (hasTag) {
-    // 状态 1：当前为 OpenClaw 专属 -> 执行【手动取消】
-    var tipMsg = inTier2
-      ? '【确认手动取消 OpenClaw 专属标签】\\n\\n模型【' + m.id + '】当前正在第二梯队（OpenClaw专属池）在席运行。\\n\\n手动取消后：\\n1. 标签将切换为【🚫 手动取消】；\\n2. 自动将其从第二梯队中移除；\\n3. 系统在自动补位和候选下拉中将绝对禁止其进入 OpenClaw 池。\\n\\n是否确认取消？'
-      : '【确认手动取消 OpenClaw 专属标签】\\n\\n确定要取消模型【' + m.id + '】的 OpenClaw 专属资格吗？\\n\\n取消后将标记为【🚫 手动取消】，且系统将绝对禁止其进入 OpenClaw 专属池。'
-    
-    if (!confirm(tipMsg)) {
-      return
-    }
-
+    // 状态 1：当前为 OpenClaw 专属 -> 直接【手动取消】（静默秒级切换，不弹窗）
     if (!Array.isArray(m.tags)) {
       m.tags = []
     }
@@ -2346,12 +2344,7 @@ function toggleOpenClawTag(providerId, modelId, modelIdx) {
     markUnsaved()
     toast('已手动取消模型【' + m.id + '】专属资格' + (inTier2 ? '，并已从第二梯队池中移除' : '') + '（暂存中）', 'info')
   } else if (isManualCanceled) {
-    // 状态 2：当前处于【手动取消】状态 -> 执行【重新恢复】
-    var tipMsg = '【恢复 OpenClaw 专属资格】\\n\\n是否重新恢复模型【' + m.id + '】的 OpenClaw 专属资格？'
-    if (!confirm(tipMsg)) {
-      return
-    }
-
+    // 状态 2：当前处于【手动取消】状态 -> 直接【重新恢复】（静默秒级切换，不弹窗）
     if (Array.isArray(m.tags)) {
       m.tags = m.tags.filter(function(t) { return t !== 'no-openclaw' })
     } else {
