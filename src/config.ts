@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.36
+ * 版本号: v1.0.37
  * 模块: 系统常量、KV键名及三大梯队默认配置
  */
 import type { Provider, TierConfig } from './types'
@@ -8,7 +8,7 @@ import type { Provider, TierConfig } from './types'
 export const SITE_CONFIG = {
   title: 'AI Gateway',
   subtitle: '统一的 AI 管理平台',
-  version: 'v1.0.36', // 主页显示的最新系统版本号
+  version: 'v1.0.37', // 主页显示的最新系统版本号
   author: 'QingYun',
   authorUrl: 'https://github.com/yutian81/ai-gateway',
   blogUrl: 'https://blog.notett.com',

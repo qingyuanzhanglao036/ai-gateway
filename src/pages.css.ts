@@ -685,11 +685,19 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
 .tier-model-del { color: var(--color-muted); background: transparent; border: none; cursor: pointer; padding: 2px 4px; border-radius: 3px; font-size: 11px; line-height: 1; flex-shrink: 0; transition: color .15s, background .15s; }
 .tier-model-del:hover { color: #dc2626; background: #fee2e2; }
 .tier-model-item__bottom { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-width: 0; }
+.tier-model-item__tags { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .tier-model-latencies { display: inline-flex; align-items: center; gap: 4px; }
 .latency-badge { display: inline-flex; align-items: center; gap: 3px; font-family: var(--font-mono); font-size: 10px; font-weight: 500; padding: 1px 5px; border-radius: 3px; white-space: nowrap; border: 1px solid transparent; line-height: 1.3; }
 .latency-badge--probe { background: #fef9c3; color: #854d0e; border-color: #fde047; }
 .latency-badge--real { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; }
-.latency-badge--none { background: transparent; color: var(--color-muted); border-color: transparent; font-size: 10px; opacity: 0.65; }
+.latency-badge--none { background: var(--color-paper-3); color: var(--color-muted); border-color: var(--color-rule); font-size: 10px; }
+
+/* 正在连接的活跃主调度模型微光徽章 */
+.tier-active-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: #dcfce7; color: #15803d; border: 1px solid #86efac; line-height: 1.3; white-space: nowrap; }
+.tier-active-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; display: inline-block; box-shadow: 0 0 5px rgba(34, 197, 94, 0.8); }
+
+/* OpenClaw 专属认证徽章 */
+.tier-claw-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: #fef3c7; color: #b45309; border: 1px solid #fde68a; line-height: 1.3; white-space: nowrap; }
 
 .tier-pool-form { display: flex; gap: 6px; align-items: center; margin-block-start: auto; padding-block-start: var(--space-xs); border-block-start: 1px dashed var(--color-rule); }
 

@@ -467,6 +467,12 @@ export async function triggerTierRefill(
       // 检查是否已经在当前梯队中
       if (existingKeys.has(`${p.id}:::${m.id}`)) continue
 
+      // 核心准入约束：若是第二梯队（OpenClaw 专属模型池），必须具备 openclaw 专属标签，严禁普通模型浑水摸鱼进入
+      if (isTier2) {
+        const hasClawTag = (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id)
+        if (!hasClawTag) continue
+      }
+
       // 若是第三梯队（绘图专属），优先筛选绘图分类或全部可用候选
       if (isTier3 && m.category && m.category !== 'image' && m.category !== 'other') {
         // 允许候选进入

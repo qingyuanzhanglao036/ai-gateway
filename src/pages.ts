@@ -119,7 +119,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
       </div>
 
       <div class="tier-model-list">
-        ${isLoggedIn ? (list.length > 0 ? list.map((item) => {
+        ${isLoggedIn ? (list.length > 0 ? list.map((item, idx) => {
           const prov = provMap.get(item.providerId)
           const pName = prov ? prov.name : item.providerId
           const cat = item.category || 'text'
@@ -130,29 +130,52 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
 
           const fullId = `${item.providerId}/${item.modelId}`
           
-          // 获取双指标延迟
+          // 判断模型是否具备 openclaw 专属认证标签
+          let isClaw = false
+          if (prov && prov.models) {
+            const rawM = prov.models.find(m => m.id === item.modelId)
+            if (rawM) {
+              isClaw = (Array.isArray(rawM.tags) && rawM.tags.includes('openclaw')) || /openclaw/i.test(rawM.id)
+            }
+          }
+          const clawTagHtml = isClaw ? `<span class="tier-claw-badge" title="OpenClaw 专属认证支持"><i class="fas fa-paw"></i>OpenClaw</span>` : ''
+
+          // 关键需求：当前正在连接的模型标记（排在第一位的在席健康模型为当前首选实时连接模型）
+          const isConnectingActive = (idx === 0)
+          const activeBadgeHtml = isConnectingActive
+            ? `<span class="tier-active-badge" title="当前梯队首选调度输出模型（正在实时连接）"><span class="tier-active-dot"></span>连接中</span>`
+            : ''
+
+          // 获取双指标延迟（保持完整的两个标签）
           const key = `${item.providerId}:${item.modelId}`
           const latStats = latenciesMap[key] || { probeLatency: null, realLatency: null }
           const probeMs = latStats.probeLatency
           const realMs = latStats.realLatency
 
           return `<div class="tier-model-item">
-            <div class="tier-model-item__info">
-              <span class="tier-model-item__prov">${escapePageHtml(pName)}</span>
-              <strong>${escapePageHtml(item.modelId)}</strong>
-              ${catBadge}
+            <div class="tier-model-item__top">
+              <span class="tier-model-idx">#${idx + 1}</span>
+              <span class="tier-model-prov" title="提供商: ${escapePageHtml(pName)}">${escapePageHtml(pName)}</span>
+              <span class="tier-model-name" title="${escapePageHtml(item.modelId)}">${escapePageHtml(item.modelId)}</span>
+              <button class="icon-btn copy-control" data-copy="${escapePageHtml(fullId)}" type="button" title="复制调用名" aria-label="复制模型名" style="padding: 2px 4px; font-size: 11px;">
+                <i class="far fa-copy"></i>
+              </button>
+            </div>
+            <div class="tier-model-item__bottom">
+              <div class="tier-model-item__tags">
+                ${catBadge}
+                ${activeBadgeHtml}
+                ${clawTagHtml}
+              </div>
               <div class="tier-model-latencies">
                 <span class="latency-badge ${probeMs ? 'latency-badge--probe' : 'latency-badge--none'}" title="最近一次定时自动巡检海选探测延迟">
-                  <i class="fas fa-bolt"></i> 探测: ${probeMs ? `${probeMs}ms` : '未探测'}
+                  <i class="fas fa-bolt"></i>探测: ${probeMs ? `${probeMs}ms` : '未测'}
                 </span>
                 <span class="latency-badge ${realMs ? 'latency-badge--real' : 'latency-badge--none'}" title="最近 50 次真实用户调用加权平均延迟">
-                  <i class="fas fa-chart-bar"></i> 真实: ${realMs ? `${realMs}ms` : '无数据'}
+                  <i class="fas fa-chart-bar"></i>真实: ${realMs ? `${realMs}ms` : '无'}
                 </span>
               </div>
             </div>
-            <button class="icon-btn copy-control" data-copy="${escapePageHtml(fullId)}" type="button" title="复制调用名" aria-label="复制模型名">
-              <i class="far fa-copy"></i>
-            </button>
           </div>`
         }).join('') : `
           <div style="text-align: center; padding: 18px 8px; color: var(--color-muted); font-size: 13px;">
@@ -1282,16 +1305,18 @@ function renderTierPools() {
   const container = document.getElementById('tierPoolsContainer')
   if (!container || !stagedTiers) return
 
-  // 收集当前暂存的所有提供商中的全部模型供下拉选择
+  // 收集当前暂存的所有提供商中的全部模型供下拉选择（记录 tags 标签）
   let allAvailableModels = []
   stagedProviders.forEach(function(p) {
     if (p.models && Array.isArray(p.models)) {
       p.models.forEach(function(m) {
+        const isClaw = (Array.isArray(m.tags) && m.tags.includes('openclaw')) || /openclaw/i.test(m.id)
         allAvailableModels.push({
           providerId: p.id,
           providerName: p.name || p.id,
           modelId: m.id,
-          category: m.category || 'text'
+          category: m.category || 'text',
+          isOpenClaw: isClaw
         })
       })
     }
@@ -1308,15 +1333,23 @@ function renderTierPools() {
     if (!t) return ''
     const models = t.models || []
     const isFull = models.length >= t.maxSeats
+    const isTier2 = item.key === 'tier2'
+
+    // 关键逻辑：第二梯队（OpenClaw）在下拉框中进行前置筛选，仅提供带有 openclaw 专属标签的模型
+    const filteredCandidates = allAvailableModels.filter(function(m) {
+      if (isTier2) return m.isOpenClaw
+      return true
+    })
 
     // 下拉选项
-    const optionsHtml = allAvailableModels.length === 0
-      ? '<option value="">暂无可用模型，请先添加提供商与模型</option>'
-      : '<option value="">-- 选择要指派入席的模型 --</option>' + allAvailableModels.map(function(m) {
+    const optionsHtml = filteredCandidates.length === 0
+      ? (isTier2 ? '<option value="">暂无具备 openclaw 专属标签的模型</option>' : '<option value="">暂无可用模型，请先添加提供商与模型</option>')
+      : '<option value="">-- 选择要指派入席的模型 --</option>' + filteredCandidates.map(function(m) {
           const inThisTier = models.some(function(tm) { return tm.providerId === m.providerId && tm.modelId === m.modelId })
           const catName = m.category === 'image' ? '绘图' : (m.category === 'multimodal' ? '多模态' : '文本')
+          const clawSuffix = m.isOpenClaw ? ' [🐾 OpenClaw]' : ''
           return '<option value="' + escapeHtml(m.providerId) + ':::' + escapeHtml(m.modelId) + '" ' + (inThisTier ? 'disabled' : '') + '>' +
-            '[' + escapeHtml(m.providerName) + '] ' + escapeHtml(m.modelId) + ' (' + catName + ')' + (inThisTier ? ' [已在席位]' : '') +
+            '[' + escapeHtml(m.providerName) + '] ' + escapeHtml(m.modelId) + ' (' + catName + ')' + clawSuffix + (inThisTier ? ' [已在席位]' : '') +
             '</option>'
         }).join('')
 
@@ -1339,7 +1372,7 @@ function renderTierPools() {
 
       '<div class="tier-model-list">' +
         (models.length > 0 ? models.map(function(m, idx) {
-          // 查找匹配当前模型的提供商名称
+          // 查找匹配当前模型的提供商名称与标签
           const prov = stagedProviders.find(function(p) { return p.id === m.providerId })
           const pName = prov ? prov.name : m.providerId
           const cat = m.category || 'text'
@@ -1348,25 +1381,38 @@ function renderTierPools() {
           else if (cat === 'multimodal') catBadge = '<span class="cat-chip cat-chip--multimodal"><i class="fas fa-eye"></i>多模态</span>'
           else if (cat === 'other') catBadge = '<span class="cat-chip cat-chip--other"><i class="fas fa-cube"></i>其他</span>'
 
-          // 关键逻辑：从 latenciesMap 中匹配当前梯队席位模型的定时探测与真实用户调用双延迟
+          // 判断模型是否带有 openclaw 标签
+          let isClaw = false
+          if (prov && prov.models) {
+            const rawMdl = prov.models.find(function(item) { return item.id === m.modelId })
+            if (rawMdl) {
+              isClaw = (Array.isArray(rawMdl.tags) && rawMdl.tags.includes('openclaw')) || /openclaw/i.test(rawMdl.id)
+            }
+          }
+          const clawTagHtml = isClaw ? '<span class="tier-claw-badge" title="OpenClaw 专属认证支持"><i class="fas fa-paw"></i>OpenClaw</span>' : ''
+
+          // 关键需求：当前正在连接的模型标记（排在第一位的在席健康模型为主要连接输出模型）
+          const isConnectingActive = (idx === 0)
+          const activeBadgeHtml = isConnectingActive
+            ? '<span class="tier-active-badge" title="当前梯队首选调度输出模型（正在实时连接）"><span class="tier-active-dot"></span>连接中</span>'
+            : ''
+
+          // 从 latenciesMap 中拉取当前席位模型的探测与真实双延迟数据，完整保留两个标签
           const key = m.providerId + ':' + m.modelId
           const stats = (typeof latenciesMap !== 'undefined' && latenciesMap && latenciesMap[key]) || { probeLatency: null, realLatency: null }
           const probeMs = stats.probeLatency
           const realMs = stats.realLatency
 
-          // 关键判断：智能精简延迟指示器，仅展示有实际意义的数值，杜绝满屏大灰方块造成的视觉杂乱
-          let latHtml = ''
-          if (realMs) {
-            latHtml += '<span class="latency-badge latency-badge--real" title="真实用户平均调用延迟"><i class="fas fa-chart-bar"></i>真实 ' + realMs + 'ms</span>'
-          }
-          if (probeMs) {
-            latHtml += '<span class="latency-badge latency-badge--probe" title="后台巡检定时探测延迟"><i class="fas fa-bolt"></i>' + probeMs + 'ms</span>'
-          }
-          if (!realMs && !probeMs) {
-            latHtml = '<span class="latency-badge latency-badge--none" title="暂无测速记录"><i class="fas fa-minus"></i>待测</span>'
-          }
+          const latHtml = '<div class="tier-model-latencies">' +
+            '<span class="latency-badge ' + (probeMs ? 'latency-badge--probe' : 'latency-badge--none') + '" title="最近巡检探测延迟">' +
+              '<i class="fas fa-bolt"></i>探测: ' + (probeMs ? probeMs + 'ms' : '未测') +
+            '</span>' +
+            '<span class="latency-badge ' + (realMs ? 'latency-badge--real' : 'latency-badge--none') + '" title="真实用户平均延迟">' +
+              '<i class="fas fa-chart-bar"></i>真实: ' + (realMs ? realMs + 'ms' : '无') +
+            '</span>' +
+          '</div>'
 
-          // 统一标准规范的两行流式卡片：杜绝高矮不齐与错位换行
+          // 统一标准规范的两行流式卡片：杜绝高矮不齐与错位换行，信息完整保留
           return '<div class="tier-model-item">' +
             // 第一行：席位序号 + 提供商缩标 + 模型名称（单行超出省略） + 删除按钮
             '<div class="tier-model-item__top">' +
@@ -1377,10 +1423,14 @@ function renderTierPools() {
                 '<i class="fas fa-times"></i>' +
               '</button>' +
             '</div>' +
-            // 第二行：左侧模型分类徽章 + 右侧测速状态指标
+            // 第二行：左侧分类 + 状态标签（连接中、OpenClaw） + 右侧完整的双测速指标
             '<div class="tier-model-item__bottom">' +
-              catBadge +
-              '<div class="tier-model-latencies">' + latHtml + '</div>' +
+              '<div class="tier-model-item__tags">' +
+                catBadge +
+                activeBadgeHtml +
+                clawTagHtml +
+              '</div>' +
+              latHtml +
             '</div>' +
           '</div>'
         }).join('') : '<div style="text-align: center; padding: 18px 8px; color: var(--color-muted); font-size: 12px;"><i class="fas fa-inbox" style="margin-bottom: 4px; display: block; font-size: 16px;"></i>所有模型默认不入池，请在下方选择模型指派入席</div>') +
@@ -1419,7 +1469,7 @@ function updateTierSeats(tierKey, newSeatsVal) {
   markUnsaved()
 }
 
-// 指派模型入席
+// 指派模型入席（包含 OpenClaw 专属标签强制准入拦截）
 function addModelToTier(tierKey) {
   const t = stagedTiers[tierKey]
   if (!t) return
@@ -1446,12 +1496,22 @@ function addModelToTier(tierKey) {
     return
   }
 
-  // 获取模型分类
+  // 获取模型分类与标签
   let cat = 'text'
+  let isClaw = false
   const prov = stagedProviders.find(function(p) { return p.id === providerId })
   if (prov && prov.models) {
     const mdl = prov.models.find(function(m) { return m.id === modelId })
-    if (mdl && mdl.category) cat = mdl.category
+    if (mdl) {
+      if (mdl.category) cat = mdl.category
+      isClaw = (Array.isArray(mdl.tags) && mdl.tags.includes('openclaw')) || /openclaw/i.test(mdl.id)
+    }
+  }
+
+  // 关键准入限制：第二梯队（Tier2 OpenClaw）必须具备 openclaw 专属标签
+  if (tierKey === 'tier2' && !isClaw) {
+    toast('入席拦截：第二梯队为 OpenClaw 专属池，该模型未拥有 openclaw 专属标签，禁止加入！', 'error')
+    return
   }
 
   t.models.push({
