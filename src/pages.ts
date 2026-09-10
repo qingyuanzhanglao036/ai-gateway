@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.45
+ * 版本号: v1.0.46
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -1569,7 +1569,71 @@ window.tog = function tog(id) {
   if (c && d) c.style.transform = d.classList.contains('open') ? 'rotate(90deg)' : ''
 }
 
+// 重置添加新提供商表单为空白初始状态（彻底解决残留上一个提供商数据的问题）
+window.resetAddForm = function resetAddForm() {
+  const anm = document.getElementById('anm')
+  const aid = document.getElementById('aid')
+  const aurl = document.getElementById('aurl')
+  const afmt = document.getElementById('afmt')
+  const aen = document.getElementById('aen')
+  const anewMid = document.getElementById('anew-mid')
+  const anewMcat = document.getElementById('anew-mcat')
+  const akeys = document.getElementById('akeys')
+  const amodels = document.getElementById('amodels')
+  const atestR = document.getElementById('atestR')
+  const amc = document.getElementById('amc')
+
+  if (anm) anm.value = ''
+  if (aid) aid.value = ''
+  if (aurl) aurl.value = ''
+  if (afmt) afmt.value = 'openai'
+  if (aen) aen.checked = true
+  if (anewMid) anewMid.value = ''
+  if (anewMcat) anewMcat.value = 'auto'
+  if (atestR) atestR.innerHTML = ''
+  if (amc) amc.classList.add('hd')
+
+  // 重置 API Key 列表为单行空输入框
+  if (akeys) {
+    akeys.innerHTML = '<div class="fc mb-4 field-row">' +
+      '<input type="text" placeholder="sk-xxx" class="fx1 aki" aria-label="上游 API Key">' +
+      '<label class="tg" title="启用 Key"><input type="checkbox" checked class="ake" aria-label="启用 Key"><span class="sl"></span></label>' +
+      '<button class="icon-btn" onclick="copyRowVal(this)" title="复制 Key" aria-label="复制 Key"><i class="far fa-copy"></i></button>' +
+      '<button class="icon-btn" onclick="testNewAKey(this)" title="测试 Key" aria-label="测试 Key"><i class="fas fa-plug"></i></button>' +
+      '<button class="icon-btn" onclick="this.parentElement.remove()" title="移除 Key" aria-label="移除 Key"><i class="fas fa-times"></i></button>' +
+      '</div>'
+  }
+
+  // 重置模型列表为单行默认输入卡片
+  if (amodels) {
+    amodels.innerHTML = '<div class="model-card-compact field-row">' +
+      '<div class="model-row-header">' +
+        '<input type="text" placeholder="deepseek-chat" class="fx1 ami" aria-label="模型 ID">' +
+        '<div class="model-actions">' +
+          '<button type="button" class="action-icon-btn" onclick="copyRowVal(this)" title="复制模型 ID" aria-label="复制模型 ID"><i class="far fa-copy" aria-hidden="true"></i></button>' +
+          '<button type="button" class="action-icon-btn" onclick="testNewMdl(this)" title="测试模型" aria-label="测试模型"><i class="fas fa-plug" aria-hidden="true"></i></button>' +
+          '<label class="tg tg-mini" title="启用模型"><input type="checkbox" checked class="ame" aria-label="启用模型"><span class="sl"></span></label>' +
+          '<button type="button" class="action-icon-btn action-icon-btn--danger" onclick="this.closest(\\\'.model-card-compact\\\').remove()" title="移除模型" aria-label="移除模型"><i class="fas fa-times" aria-hidden="true"></i></button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="model-row-badges">' +
+        '<select class="select-mini amcat" title="模型分类">' +
+          '<option value="auto">自动</option>' +
+          '<option value="text">文本</option>' +
+          '<option value="image">绘图</option>' +
+          '<option value="multimodal">多模</option>' +
+          '<option value="other">其他</option>' +
+        '</select>' +
+        '<span class="model-mini-badge model-mini-badge--ok" title="新模型待创建"><i class="fas fa-check-circle"></i>待创建</span>' +
+      '</div>' +
+    '</div>'
+  }
+}
+
 window.showAdd = function showAdd() {
+  if (typeof window.resetAddForm === 'function') {
+    window.resetAddForm()
+  }
   const af = document.getElementById('af')
   if (af) af.classList.remove('hd')
 }
@@ -1578,6 +1642,9 @@ window.hideAdd = function hideAdd() {
   const af = document.getElementById('af'), amc = document.getElementById('amc')
   if (af) af.classList.add('hd')
   if (amc) amc.classList.add('hd')
+  if (typeof window.resetAddForm === 'function') {
+    window.resetAddForm()
+  }
 }
 
 // aid 输入 opencode 时自动填充 API 地址（增加 DOM 存在的安全判断）

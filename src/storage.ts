@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.26
+ * 版本号: v1.0.46
  * 模块: 数据持久化层（KV 存储读写与顺风车打包）
  */
 import {
@@ -114,6 +114,8 @@ export async function getAuditionCursor(env: Env): Promise<AuditionCursor> {
 
 export async function saveAuditionCursor(env: Env, cursor: AuditionCursor): Promise<void> {
   await env.KV.put(KV_KEYS.PROBE_AUDITION_CURSOR, JSON.stringify(cursor))
+  // 顺风车落盘
+  await flushLogsToKv(env)
 }
 
 // 2. 海选探测日志与 OpenClaw 专属探测日志（完全隔离，仅保留最近20条，不参与真实业务淘汰）
@@ -130,6 +132,8 @@ export async function recordProbeLog(env: Env, result: ProbeResult): Promise<voi
   // 最多保留最新 20 条探测日志，减少 KV 体积
   const trimmed = list.slice(0, 20)
   await env.KV.put(key, JSON.stringify(trimmed))
+  // 顺风车落盘
+  await flushLogsToKv(env)
 }
 
 // 3. 真实业务延迟样本（每个模型保留最近 50 条，超出丢弃旧样本，梯队动态淘汰仅采信此数据）
@@ -204,6 +208,8 @@ export async function getTierConfig(env: Env): Promise<TierConfig> {
 // 将三大梯队配置一次性持久化至 KV
 export async function setTierConfig(env: Env, config: TierConfig): Promise<void> {
   await env.KV.put(KV_KEYS.TIERS, JSON.stringify(config))
+  // 顺风车落盘
+  await flushLogsToKv(env)
 }
 
 /**
@@ -275,6 +281,8 @@ export async function getCustomRoutes(env: Env): Promise<CustomRouteRule[]> {
 
 export async function setCustomRoutes(env: Env, routes: CustomRouteRule[]): Promise<void> {
   await env.KV.put(KV_KEYS.CUSTOM_ROUTES, JSON.stringify(routes))
+  // 顺风车落盘
+  await flushLogsToKv(env)
 }
 
 // ===== 提供商 CRUD =====
@@ -291,6 +299,8 @@ export async function getProvider(env: Env, id: string): Promise<Provider | null
 
 export async function setProviders(env: Env, providers: Provider[]): Promise<void> {
   await env.KV.put(KV_KEYS.PROVIDERS, JSON.stringify(providers))
+  // 顺风车落盘
+  await flushLogsToKv(env)
 }
 
 export async function addProvider(env: Env, provider: Provider): Promise<void> {
@@ -354,6 +364,8 @@ export async function getProxyKeys(env: Env): Promise<ProxyKey[]> {
 
 export async function setProxyKeys(env: Env, keys: ProxyKey[]): Promise<void> {
   await env.KV.put(KV_KEYS.PROXY_KEYS, JSON.stringify(keys))
+  // 顺风车落盘
+  await flushLogsToKv(env)
 }
 
 export async function addProxyKey(env: Env, key: ProxyKey): Promise<void> {
