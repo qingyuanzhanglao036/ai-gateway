@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.29
+ * 版本号: v1.0.48
  * 模块: 自动择优探测调度框架与梯队智能补位迭代引擎
  * 
  * 核心设计准则：
@@ -11,7 +11,7 @@
  *    - 轮数与数量约束：单次补位最多连续 3 轮海选，每轮最多补位 2 个模型。
  *    - 终止退出条件：梯队席位填满 / 所有可用模型遍历完成 / 到达最大 3 轮 / 无可用候选直接退出。
  *    - 故障熔断：探测遇到 401/403/404 或累计 3 次失败直接标红永久失效 (dead)；其它失败标黄冷却 10 分钟。
- * 3. OpenClaw 专属探测：用于测试模型是否具备 OpenClaw Agent 指令遵循能力，测试通过打上 openclaw 专属标签。
+ * 3. OpenClaw 专属探测与防死循环：第二梯队补位时对未打标模型发起专属指令测试，成功自动打标入池；失败记入 30 分钟失败冷冻期，单次最多测试 3 个候选模型，防死循环暴击。
  * 4. KV 配额严格保护：探测过程中的状态变更与梯队变动在内存中计算，完成后搭顺风车一次性批量写入 KV。
  */
 import type { Env, Provider, ProbeResult, Model, TierConfig, TierKey } from './types'
@@ -57,6 +57,9 @@ const tierRefillProviderOffset: Record<string, number> = {
   tier2: 0,
   tier3: 0,
 }
+
+// OpenClaw 专属探测失败模型冷却记录表（内存防死循环，30 分钟内不重复对同一个失败模型发起 OpenClaw 专属指令测试）
+const openclawProbeFailTimeMap = new Map<string, number>()
 
 /**
  * 辅助函数：收集所有已启用的提供商与已启用的模型列表（按顺序扁平排列）
@@ -479,9 +482,18 @@ export async function triggerTierRefill(
       // 检查是否已经在当前梯队中
       if (existingKeys.has(`${p.id}:::${m.id}`)) continue
 
-      // 核心准入约束：若是第二梯队（OpenClaw 专属模型池），必须具备 openclaw 专属标签，严禁普通模型或手动取消的模型进入
+      // 核心准入与补位约束：
+      // 若是第二梯队（OpenClaw 专属模型池）：
+      // 1. 如果包含手动取消标签 'no-openclaw'，一票否决
+      // 2. 已打标 openclaw 的模型直接优先作为候选
+      // 3. 未打标模型允许作为补位探测候选，但必须检查是否处于 30 分钟专属探测失败冷却期中（防止死循环轰炸）
       if (isTier2) {
-        if (!isModelOpenClawSupported(m)) continue
+        if (Array.isArray(m.tags) && m.tags.includes('no-openclaw')) continue
+        const hasOpenClawTag = isModelOpenClawSupported(m)
+        if (!hasOpenClawTag) {
+          const failCooldownUntil = openclawProbeFailTimeMap.get(`${p.id}:::${m.id}`) || 0
+          if (now < failCooldownUntil) continue // 处于 30 分钟失败冷却期内，跳过
+        }
       }
 
       // 若是第三梯队（绘图专属），优先筛选绘图分类或全部可用候选
@@ -498,7 +510,7 @@ export async function triggerTierRefill(
     }
   }
 
-  // 4. “雨露均沾发牌式”交错组合候选名单
+  // 4. “雨露均沾发牌式”交错组合候选名单（配合提供商游标轮转，公平抽取）
   // 无论有多少个提供商，每轮轮流从各提供商抽取 1 个模型，彻底杜绝单一大户垄断
   const candidates: Candidate[] = []
   let hasMore = true
@@ -516,6 +528,15 @@ export async function triggerTierRefill(
     modelIndexInProvider++
   }
 
+  // 若是第二梯队，优先将已具备 openclaw 标签的模型排在队首，未打标候选紧随其后
+  if (isTier2) {
+    candidates.sort((a, b) => {
+      const aHas = isModelOpenClawSupported(a.model) ? 1 : 0
+      const bHas = isModelOpenClawSupported(b.model) ? 1 : 0
+      return bHas - aHas
+    })
+  }
+
   // 约束：无可用候选直接退出，禁止空循环
   if (candidates.length === 0) {
     return {
@@ -529,6 +550,8 @@ export async function triggerTierRefill(
   let round = 0
   let candidateIndex = 0
   let stateModified = false
+  let untaggedProbedCountForTier2 = 0
+  const MAX_UNTAGGED_PROBES_PER_REFILL = 3
 
   // 5. 补位主循环：最多连续 3 轮完整海选
   while (
@@ -558,10 +581,23 @@ export async function triggerTierRefill(
 
     // 收集处理本批次探测结果
     for (const { cand, probeRes } of probeResults) {
+      const modelKey = `${cand.provider.id}:::${cand.model.id}`
+      const isAlreadyOpenClaw = isModelOpenClawSupported(cand.model)
+
       if (probeRes.success) {
         // 探测成功，重置失败计数器，并记录延迟样本
         cand.model.status = 'healthy'
         delete cand.model.cooldownUntil
+
+        // 若是第二梯队且该模型原本没有 openclaw 标签，探测成功后自动给该模型打上 'openclaw' 标签！
+        if (isTier2 && !isAlreadyOpenClaw) {
+          if (!cand.model.tags) cand.model.tags = []
+          if (!cand.model.tags.includes('openclaw')) {
+            cand.model.tags.push('openclaw')
+          }
+          stateModified = true
+        }
+
         roundProbeResults.push({
           candidate: cand,
           latencyMs: probeRes.latencyMs,
@@ -570,20 +606,26 @@ export async function triggerTierRefill(
       } else {
         // 探测失败判定：
         stateModified = true
-        cand.model.failCount = (cand.model.failCount || 0) + 1
 
-        // 约束：如果遇到 401/403/404 或累计失败达到 3 次，标红永久失效
-        const isAuthOrNotFound =
-          probeRes.statusCode === 401 || probeRes.statusCode === 403 || probeRes.statusCode === 404
-        if (isAuthOrNotFound || cand.model.failCount >= MODEL_MAX_PROBE_FAILURES) {
-          cand.model.status = 'dead'
-          cand.model.deadReason = isAuthOrNotFound
-            ? `探测鉴权或端点失效 (HTTP ${probeRes.statusCode})`
-            : `累计探测失败 ${cand.model.failCount} 次熔断`
+        // 若是第二梯队针对未打标模型的专属指令测试失败：
+        // 1. 绝不打上 openclaw 标签，不准入池
+        // 2. 记入 30 分钟失败冷却表，防死循环
+        if (isTier2 && !isAlreadyOpenClaw) {
+          openclawProbeFailTimeMap.set(modelKey, now + 30 * 60 * 1000)
+          untaggedProbedCountForTier2++
         } else {
-          // 否则标黄冷却 10 分钟
-          cand.model.status = 'cooling'
-          cand.model.cooldownUntil = now + MODEL_COOLDOWN_DURATION_MS
+          cand.model.failCount = (cand.model.failCount || 0) + 1
+          const isAuthOrNotFound =
+            probeRes.statusCode === 401 || probeRes.statusCode === 403 || probeRes.statusCode === 404
+          if (isAuthOrNotFound || cand.model.failCount >= MODEL_MAX_PROBE_FAILURES) {
+            cand.model.status = 'dead'
+            cand.model.deadReason = isAuthOrNotFound
+              ? `探测鉴权或端点失效 (HTTP ${probeRes.statusCode})`
+              : `累计探测失败 ${cand.model.failCount} 次熔断`
+          } else {
+            cand.model.status = 'cooling'
+            cand.model.cooldownUntil = now + MODEL_COOLDOWN_DURATION_MS
+          }
         }
       }
     }
@@ -598,6 +640,12 @@ export async function triggerTierRefill(
 
     for (const item of toAddThisRound) {
       if (targetTier.models.length >= targetTier.maxSeats) break
+
+      // 严格门禁：第二梯队模型必须在入池前拥有 openclaw 标签（未打标或测试失败模型绝不允许入池）
+      if (isTier2 && !isModelOpenClawSupported(item.candidate.model)) {
+        continue
+      }
+
       targetTier.models.push({
         providerId: item.candidate.provider.id,
         modelId: item.candidate.model.id,
@@ -606,6 +654,11 @@ export async function triggerTierRefill(
       })
       totalRefilled++
       stateModified = true
+    }
+
+    // 防死循环保护：第二梯队若未打标候选模型探测尝试累计达到 3 次，立刻安全终止本轮补位
+    if (isTier2 && untaggedProbedCountForTier2 >= MAX_UNTAGGED_PROBES_PER_REFILL) {
+      break
     }
 
     // 退出条件：若梯队已满，提前终止

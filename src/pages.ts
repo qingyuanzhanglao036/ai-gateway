@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.47
+ * 版本号: v1.0.48
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -121,65 +121,85 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
       </div>
 
       <div class="tier-model-list">
-        ${isLoggedIn ? (list.length > 0 ? list.map((item, idx) => {
-          const prov = provMap.get(item.providerId)
-          const pName = prov ? prov.name : item.providerId
-          const cat = item.category || 'text'
-          let catBadge = `<span class="cat-chip cat-chip--text"><i class="fas fa-font"></i>文本</span>`
-          if (cat === 'image') catBadge = `<span class="cat-chip cat-chip--image"><i class="fas fa-paint-brush"></i>绘图</span>`
-          else if (cat === 'multimodal') catBadge = `<span class="cat-chip cat-chip--multimodal"><i class="fas fa-eye"></i>多模态</span>`
-          else if (cat === 'other') catBadge = `<span class="cat-chip cat-chip--other"><i class="fas fa-cube"></i>其他</span>`
+        ${isLoggedIn ? (list.length > 0 ? (() => {
+          // 查找梯队中真正处于在线健康状态（非禁用、非冷却、非熔断）的首个模型索引
+          const nowMs = Date.now()
+          const firstHealthyIdx = list.findIndex((mItem) => {
+            const p = provMap.get(mItem.providerId)
+            if (!p || p.enabled === false) return false
+            const rm = p.models ? p.models.find(m => m.id === mItem.modelId) : null
+            if (!rm || rm.enabled === false) return false
+            if (rm.status === 'dead') return false
+            if (rm.status === 'cooling' || (rm.cooldownUntil && rm.cooldownUntil > nowMs)) return false
+            return true
+          })
 
-          const fullId = `${item.providerId}/${item.modelId}`
-          
-          // 判断模型是否具备 openclaw 专属认证标签（在第二梯队运行或具备专属标签）
-          let isClaw = isTier2
-          if (!isClaw && prov && prov.models) {
-            const rawM = prov.models.find(m => m.id === item.modelId)
-            if (rawM) {
+          return list.map((item, idx) => {
+            const prov = provMap.get(item.providerId)
+            const pName = prov ? prov.name : item.providerId
+            const cat = item.category || 'text'
+            let catBadge = `<span class="cat-chip cat-chip--text"><i class="fas fa-font"></i>文本</span>`
+            if (cat === 'image') catBadge = `<span class="cat-chip cat-chip--image"><i class="fas fa-paint-brush"></i>绘图</span>`
+            else if (cat === 'multimodal') catBadge = `<span class="cat-chip cat-chip--multimodal"><i class="fas fa-eye"></i>多模态</span>`
+            else if (cat === 'other') catBadge = `<span class="cat-chip cat-chip--other"><i class="fas fa-cube"></i>其他</span>`
+
+            const fullId = `${item.providerId}/${item.modelId}`
+            
+            // 判断模型是否具备 openclaw 专属认证标签（在第二梯队运行或具备专属标签）
+            let isClaw = isTier2
+            const rawM = prov && prov.models ? prov.models.find(m => m.id === item.modelId) : null
+            if (!isClaw && rawM) {
               isClaw = (Array.isArray(rawM.tags) && rawM.tags.includes('openclaw')) || /openclaw/i.test(rawM.id)
             }
-          }
-          const clawTagHtml = isClaw ? `<span class="tier-claw-badge" title="OpenClaw 专属认证支持"><i class="fas fa-paw"></i>OpenClaw</span>` : ''
+            const clawTagHtml = isClaw ? `<span class="tier-claw-badge" title="OpenClaw 专属认证支持"><i class="fas fa-paw"></i>OpenClaw</span>` : ''
 
-          // 关键需求：当前正在连接的模型标记（排在第一位的在席健康模型为当前首选实时连接模型）
-          const isConnectingActive = (idx === 0)
-          const activeBadgeHtml = isConnectingActive
-            ? `<span class="tier-active-badge" title="当前梯队首选调度输出模型（正在实时连接）"><span class="tier-active-dot"></span>连接中</span>`
-            : ''
+            // 准确标注真正承接流量的网络连接状态（首个可用健康模型为【连接中】；若冷却或熔断则展示对应提示）
+            let activeBadgeHtml = ''
+            const isDead = rawM?.status === 'dead'
+            const isCooling = !isDead && (rawM?.status === 'cooling' || (rawM?.cooldownUntil && rawM.cooldownUntil > nowMs))
 
-          // 获取双指标延迟（保持完整的两个标签）
-          const key = `${item.providerId}:${item.modelId}`
-          const latStats = latenciesMap[key] || { probeLatency: null, realLatency: null }
-          const probeMs = latStats.probeLatency
-          const realMs = latStats.realLatency
+            if (idx === firstHealthyIdx) {
+              activeBadgeHtml = `<span class="tier-active-badge" title="当前梯队首选调度输出模型（正在实时连接）"><span class="tier-active-dot"></span>连接中</span>`
+            } else if (isCooling) {
+              const leftMins = rawM?.cooldownUntil ? Math.max(1, Math.ceil((rawM.cooldownUntil - nowMs) / 60000)) : 10
+              activeBadgeHtml = `<span class="tier-cooling-badge" title="模型故障冷却中，暂时跳过（剩余约 ${leftMins} 分钟）" style="color: #d97706; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 500;"><i class="fas fa-clock" style="margin-right: 3px;"></i>冷却中 (${leftMins}m)</span>`
+            } else if (isDead) {
+              activeBadgeHtml = `<span class="tier-dead-badge" title="模型鉴权失败或响应错误，已熔断失效" style="color: #dc2626; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 500;"><i class="fas fa-ban" style="margin-right: 3px;"></i>熔断失效</span>`
+            }
 
-          return `<div class="tier-model-item">
-            <div class="tier-model-item__top">
-              <span class="tier-model-idx">#${idx + 1}</span>
-              <span class="tier-model-prov" title="提供商: ${escapePageHtml(pName)}">${escapePageHtml(pName)}</span>
-              <span class="tier-model-name" title="${escapePageHtml(item.modelId)}">${escapePageHtml(item.modelId)}</span>
-              <button class="icon-btn copy-control" data-copy="${escapePageHtml(fullId)}" type="button" title="复制调用名" aria-label="复制模型名" style="padding: 2px 4px; font-size: 11px;">
-                <i class="far fa-copy"></i>
-              </button>
-            </div>
-            <div class="tier-model-item__bottom">
-              <div class="tier-model-item__tags">
-                ${catBadge}
-                ${activeBadgeHtml}
-                ${clawTagHtml}
+            // 获取双指标延迟（保持完整的两个标签）
+            const key = `${item.providerId}:${item.modelId}`
+            const latStats = latenciesMap[key] || { probeLatency: null, realLatency: null }
+            const probeMs = latStats.probeLatency
+            const realMs = latStats.realLatency
+
+            return `<div class="tier-model-item">
+              <div class="tier-model-item__top">
+                <span class="tier-model-idx">#${idx + 1}</span>
+                <span class="tier-model-prov" title="提供商: ${escapePageHtml(pName)}">${escapePageHtml(pName)}</span>
+                <span class="tier-model-name" title="${escapePageHtml(item.modelId)}">${escapePageHtml(item.modelId)}</span>
+                <button class="icon-btn copy-control" data-copy="${escapePageHtml(fullId)}" type="button" title="复制调用名" aria-label="复制模型名" style="padding: 2px 4px; font-size: 11px;">
+                  <i class="far fa-copy"></i>
+                </button>
               </div>
-              <div class="tier-model-latencies">
-                <span class="latency-badge ${probeMs ? 'latency-badge--probe' : 'latency-badge--none'}" title="最近一次定时自动巡检海选探测延迟">
-                  <i class="fas fa-bolt"></i>探测: ${probeMs ? `${probeMs}ms` : '未测'}
-                </span>
-                <span class="latency-badge ${realMs ? 'latency-badge--real' : 'latency-badge--none'}" title="最近 50 次真实用户调用加权平均延迟">
-                  <i class="fas fa-chart-bar"></i>真实: ${realMs ? `${realMs}ms` : '无'}
-                </span>
+              <div class="tier-model-item__bottom">
+                <div class="tier-model-item__tags">
+                  ${catBadge}
+                  ${activeBadgeHtml}
+                  ${clawTagHtml}
+                </div>
+                <div class="tier-model-latencies">
+                  <span class="latency-badge ${probeMs ? 'latency-badge--probe' : 'latency-badge--none'}" title="最近一次定时自动巡检海选探测延迟">
+                    <i class="fas fa-bolt"></i>探测: ${probeMs ? `${probeMs}ms` : '未测'}
+                  </span>
+                  <span class="latency-badge ${realMs ? 'latency-badge--real' : 'latency-badge--none'}" title="最近 50 次真实用户调用加权平均延迟">
+                    <i class="fas fa-chart-bar"></i>真实: ${realMs ? `${realMs}ms` : '无'}
+                  </span>
+                </div>
               </div>
-            </div>
-          </div>`
-        }).join('') : `
+            </div>`
+          }).join('')
+        })() : `
           <div style="text-align: center; padding: 18px 8px; color: var(--color-muted); font-size: 13px;">
             <i class="fas fa-inbox" style="margin-bottom: 4px; display: block; font-size: 18px;"></i>
             所有模型默认不入池，管理员可在后台按需指派模型入席
