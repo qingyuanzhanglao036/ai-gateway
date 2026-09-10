@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.43
+ * 版本号: v1.0.45
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -2301,12 +2301,11 @@ function toggleOpenClawTag(providerId, modelId, modelIdx) {
 
   // 判定是否正在第二梯队（OpenClaw 专属池）中
   var inTier2 = false
-  var tier2Idx = -1
-  if (window.stagedTiers && window.stagedTiers.tier2 && Array.isArray(window.stagedTiers.tier2.models)) {
-    tier2Idx = window.stagedTiers.tier2.models.findIndex(function(tm) {
+  var tiersObj = typeof stagedTiers !== 'undefined' ? stagedTiers : window.stagedTiers
+  if (tiersObj && tiersObj.tier2 && Array.isArray(tiersObj.tier2.models)) {
+    inTier2 = tiersObj.tier2.models.some(function(tm) {
       return tm.providerId === providerId && tm.modelId === m.id
     })
-    inTier2 = tier2Idx >= 0
   }
 
   var isManualCanceled = Array.isArray(m.tags) && m.tags.includes('no-openclaw')
@@ -2323,9 +2322,21 @@ function toggleOpenClawTag(providerId, modelId, modelIdx) {
       m.tags.push('no-openclaw')
     }
 
-    // 联动逻辑：如果正在 Tier2 池中，联动将其移出梯队池
-    if (inTier2 && tier2Idx >= 0) {
-      window.stagedTiers.tier2.models.splice(tier2Idx, 1)
+    // 联动逻辑：如果正在 Tier2 池中，联动将其秒级彻底移出梯队池
+    if (tiersObj && tiersObj.tier2 && Array.isArray(tiersObj.tier2.models)) {
+      tiersObj.tier2.models = tiersObj.tier2.models.filter(function(tm) {
+        return !(tm.providerId === providerId && tm.modelId === m.id)
+      })
+    }
+    if (typeof stagedTiers !== 'undefined' && stagedTiers && stagedTiers.tier2 && Array.isArray(stagedTiers.tier2.models)) {
+      stagedTiers.tier2.models = stagedTiers.tier2.models.filter(function(tm) {
+        return !(tm.providerId === providerId && tm.modelId === m.id)
+      })
+    }
+    if (window.stagedTiers && window.stagedTiers.tier2 && Array.isArray(window.stagedTiers.tier2.models)) {
+      window.stagedTiers.tier2.models = window.stagedTiers.tier2.models.filter(function(tm) {
+        return !(tm.providerId === providerId && tm.modelId === m.id)
+      })
     }
 
     // 更新当前模型卡片上的徽章显示为【手动取消】
@@ -2336,7 +2347,7 @@ function toggleOpenClawTag(providerId, modelId, modelIdx) {
       clawBadgeEl.title = '已被手动取消 OpenClaw 专属资格（禁止入池，点击可重新恢复）'
     }
 
-    // 刷新梯队池（第二梯队卡片与下拉备选列表即时同步联动，排除该模型）
+    // 刷新梯队池（第二梯队卡片与下拉备选列表即时同步联动，排除该模型并重新渲染）
     if (typeof renderTierPools === 'function') {
       renderTierPools()
     }
