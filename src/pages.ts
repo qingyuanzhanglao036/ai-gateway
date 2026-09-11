@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.50
+ * 版本号: v1.0.51
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -1049,15 +1049,18 @@ ${H('管理')}
           ${providers.length ? providers.map(p=>`
           <article class="pi" data-id="${escapePageHtml(p.id)}">
             <div class="ps" onclick="tog('${p.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();tog('${p.id}')}" aria-controls="dt-${escapePageHtml(p.id)}">
-              <div class="l"><i class="fas fa-chevron-right provider-chevron" aria-hidden="true" id="ch-${escapePageHtml(p.id)}"></i><span class="provider-avatar" aria-hidden="true">${escapePageHtml(p.name.charAt(0).toUpperCase() || 'A')}</span><div><h3>${escapePageHtml(p.name)}</h3><div class="pu"><code>${escapePageHtml(p.id)}</code><span>${(p.apiType||'openai')==='anthropic'?'Anthropic':'OpenAI'}</span><span>${p.apiKeys.length} Keys</span><span>${p.models.length} 模型</span>${(() => {
+              <div class="l"><i class="fas fa-chevron-right provider-chevron" aria-hidden="true" id="ch-${escapePageHtml(p.id)}"></i><span class="provider-avatar" aria-hidden="true">${escapePageHtml(p.name.charAt(0).toUpperCase() || 'A')}</span><div><h3>${escapePageHtml(p.name)}</h3><div class="pu"><code>${escapePageHtml(p.id)}</code><span>${(p.apiType||'openai')==='anthropic'?'Anthropic':'OpenAI'}</span><span>${p.apiKeys.length} Keys</span><span>${p.models.length} 模型</span></div>${(() => {
                 const nowMs = Date.now()
                 const deadCount = p.models ? p.models.filter(m => m.status === 'dead').length : 0
                 const coolingCount = p.models ? p.models.filter(m => m.status !== 'dead' && (m.status === 'cooling' || (m.cooldownUntil && m.cooldownUntil > nowMs))).length : 0
                 let html = ''
-                if (deadCount > 0) html += `<span style="color: #dc2626; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 6px;" title="有 ${deadCount} 个模型已熔断失效"><i class="fas fa-times-circle" style="margin-right: 3px;"></i>${deadCount} 熔断</span>`
-                if (coolingCount > 0) html += `<span style="color: #d97706; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 6px;" title="有 ${coolingCount} 个模型正在冷却中"><i class="fas fa-snowflake" style="margin-right: 3px;"></i>${coolingCount} 冷却</span>`
-                return html
-              })()}</div></div></div>
+                if (deadCount > 0) html += `<span style="color: #dc2626; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;" title="有 ${deadCount} 个模型已熔断失效"><i class="fas fa-times-circle" style="margin-right: 3px;"></i>${deadCount} 熔断</span>`
+                if (coolingCount > 0) html += `<span style="color: #d97706; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;" title="有 ${coolingCount} 个模型正在冷却中"><i class="fas fa-snowflake" style="margin-right: 3px;"></i>${coolingCount} 冷却</span>`
+                if (html) {
+                  return `<div style="display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap;">${html}</div>`
+                }
+                return ''
+              })()}</div></div>
               <div class="fc fx-s0" onclick="event.stopPropagation()"><label class="tg"><input type="checkbox" ${p.enabled?'checked':''} id="en-${escapePageHtml(p.id)}" onchange="togglePb('${p.id}',this.checked)" aria-label="启用 ${escapePageHtml(p.name)}"><span class="sl"></span></label><span class="bd ${p.enabled?'bd-on':'bd-off'}">${p.enabled?'已启用':'未启用'}</span></div>
             </div>
             <div class="pd" id="dt-${escapePageHtml(p.id)}">
@@ -2026,12 +2029,16 @@ function renderProviderCard(p) {
     })
   }
 
+  var warnBadgesRow = ''
   var warnBadgesHtml = ''
   if (deadCount > 0) {
-    warnBadgesHtml += '<span style="color: #dc2626; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 6px;" title="有 ' + deadCount + ' 个模型已熔断失效"><i class="fas fa-times-circle" style="margin-right: 3px;"></i>' + deadCount + ' 熔断</span>'
+    warnBadgesHtml += '<span style="color: #dc2626; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;" title="有 ' + deadCount + ' 个模型已熔断失效"><i class="fas fa-times-circle" style="margin-right: 3px;"></i>' + deadCount + ' 熔断</span>'
   }
   if (coolingCount > 0) {
-    warnBadgesHtml += '<span style="color: #d97706; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 6px;" title="有 ' + coolingCount + ' 个模型正在冷却中"><i class="fas fa-snowflake" style="margin-right: 3px;"></i>' + coolingCount + ' 冷却</span>'
+    warnBadgesHtml += '<span style="color: #d97706; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;" title="有 ' + coolingCount + ' 个模型正在冷却中"><i class="fas fa-snowflake" style="margin-right: 3px;"></i>' + coolingCount + ' 冷却</span>'
+  }
+  if (warnBadgesHtml) {
+    warnBadgesRow = '<div style="display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap;">' + warnBadgesHtml + '</div>'
   }
 
   const article = document.createElement('article')
@@ -2041,7 +2048,7 @@ function renderProviderCard(p) {
   article.innerHTML = '<div class="ps" onclick="tog(\\\'' + p.id + '\\\')" role="button" tabindex="0">' +
     '<div class="l"><i class="fas fa-chevron-right provider-chevron" id="ch-' + p.id + '"></i>' +
     '<span class="provider-avatar">' + escapeHtml(p.name.charAt(0).toUpperCase() || 'A') + '</span>' +
-    '<div><h3>' + escapeHtml(p.name) + '</h3><div class="pu"><code>' + escapeHtml(p.id) + '</code><span>' + (p.apiType==='anthropic'?'Anthropic':'OpenAI') + '</span><span>' + p.apiKeys.length + ' Keys</span><span>' + p.models.length + ' 模型</span>' + warnBadgesHtml + '</div></div></div>' +
+    '<div><h3>' + escapeHtml(p.name) + '</h3><div class="pu"><code>' + escapeHtml(p.id) + '</code><span>' + (p.apiType==='anthropic'?'Anthropic':'OpenAI') + '</span><span>' + p.apiKeys.length + ' Keys</span><span>' + p.models.length + ' 模型</span></div>' + warnBadgesRow + '</div></div>' +
     '<div class="fc fx-s0" onclick="event.stopPropagation()"><label class="tg"><input type="checkbox" ' + (p.enabled?'checked':'') + ' id="en-' + p.id + '" onchange="togglePb(\\\'' + p.id + '\\\',this.checked)"><span class="sl"></span></label><span class="bd ' + (p.enabled?'bd-on':'bd-off') + '">' + (p.enabled?'已启用':'未启用') + '</span></div>' +
     '</div>' +
     '<div class="pd" id="dt-' + p.id + '">' +
