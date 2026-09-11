@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.57
+ * 版本号: v1.0.58
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -109,6 +109,27 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
     getCombinedLogs(c.env),
   ])
 
+  // 提前从最新成功日志中提取三大梯队的真正活跃连接模型 (支持全自动对齐)
+  const initialActiveModelMap: Record<string, string> = {}
+  if (recentLogs && recentLogs.length > 0) {
+    for (const logItem of recentLogs) {
+      if (logItem.statusCode >= 200 && logItem.statusCode < 400 && logItem.model) {
+        const rawModel = logItem.model.trim()
+        const pOpen = rawModel.lastIndexOf('(')
+        const pClose = rawModel.lastIndexOf(')')
+        if (pOpen !== -1 && pClose > pOpen) {
+          const name = rawModel.substring(0, pOpen).trim()
+          const inner = rawModel.substring(pOpen + 1, pClose).trim()
+          const parts = inner.split(':')
+          const t = parts[0] ? parts[0].trim() : ''
+          if (t && !initialActiveModelMap[t]) {
+            initialActiveModelMap[t] = name
+          }
+        }
+      }
+    }
+  }
+
   // 渲染单个梯队卡片列表
   const renderTierPoolSection = (tier: TierPoolConfig, icon: string, badgeLabel: string) => {
     const list = tier.models || []
@@ -148,24 +169,7 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
             internalTierId = 'tier3'
           }
 
-          let lastActiveModelKey: string | null = null
-          if (recentLogs && recentLogs.length > 0) {
-            for (const logItem of recentLogs) {
-              if (logItem.statusCode >= 200 && logItem.statusCode < 400 && logItem.model) {
-                // 兼容匹配内部代号 (如 tier1/tier2/tier3) 及用户别名 (如 flagship/openclaw/drawing)
-                const isMatchedTier = logItem.model.includes(`(${internalTierId}:`) ||
-                                      logItem.model.includes(`(${tierPrefix}`) ||
-                                      logItem.model.includes(`(${tier.alias}`)
-                if (isMatchedTier) {
-                  const rawPart = logItem.model.split(' ')[0]
-                  if (rawPart && rawPart.includes('/')) {
-                    lastActiveModelKey = rawPart // 例如 "openai/gpt-4o"
-                    break
-                  }
-                }
-              }
-            }
-          }
+          let lastActiveModelKey: string | null = initialActiveModelMap[internalTierId] || null
 
           return list.map((item, idx) => {
             const prov = provMap.get(item.providerId)
@@ -840,14 +844,35 @@ ${H('登录')}
 // ===== 管理后台 =====
 
 export async function renderAdminPage(c: Context<{ Bindings: Env }>) {
-  const [providers, proxyKeys, tierConfig, customRoutes] = await Promise.all([
+  const [providers, proxyKeys, tierConfig, customRoutes, recentLogs] = await Promise.all([
     getProviders(c.env),
     getProxyKeys(c.env),
     getTierConfig(c.env),
     getCustomRoutes(c.env),
+    getCombinedLogs(c.env),
   ])
-  // 顺风车并行拉取三大梯队当前在席模型的双延迟数据，准备同步至管理界面
+  // 顺风车并行拉取三大梯队当前在席模型的双延迟数据与初始活跃模型，准备同步至管理界面
   const latenciesMap = await getTierModelLatencies(c.env, tierConfig)
+
+  const initialActiveModelMap: Record<string, string> = {}
+  if (recentLogs && recentLogs.length > 0) {
+    for (const logItem of recentLogs) {
+      if (logItem.statusCode >= 200 && logItem.statusCode < 400 && logItem.model) {
+        const rawModel = logItem.model.trim()
+        const pOpen = rawModel.lastIndexOf('(')
+        const pClose = rawModel.lastIndexOf(')')
+        if (pOpen !== -1 && pClose > pOpen) {
+          const name = rawModel.substring(0, pOpen).trim()
+          const inner = rawModel.substring(pOpen + 1, pClose).trim()
+          const parts = inner.split(':')
+          const t = parts[0] ? parts[0].trim() : ''
+          if (t && !initialActiveModelMap[t]) {
+            initialActiveModelMap[t] = name
+          }
+        }
+      }
+    }
+  }
   const enabledProvidersCount = providers.filter((provider) => provider.enabled).length
   const modelsCount = providers.reduce((total, provider) => total + provider.models.length, 0)
   const enabledModelsCount = providers.reduce((total, provider) => total + provider.models.filter((model) => model.enabled).length, 0)
@@ -1293,6 +1318,8 @@ let stagedProxyKeys = ${JSON.stringify(proxyKeys).replace(/</g, '\\u003c')};
 let stagedTiers = ${JSON.stringify(tierConfig).replace(/</g, '\\u003c')};
 let stagedCustomRoutes = ${JSON.stringify(customRoutes).replace(/</g, '\\u003c')};
 let latenciesMap = ${JSON.stringify(latenciesMap).replace(/</g, '\\u003c')}; // 同步前台海选与实机探测双指标延迟数据
+let latestActiveModelMap = ${JSON.stringify(initialActiveModelMap).replace(/</g, '\\u003c')};
+window.latestActiveModelMap = latestActiveModelMap;
 let unsavedChangesCount = 0;
 
 // 优先挂载关键交互函数至全局 window 域，确保 HTML onclick 响应 100% 可靠
@@ -1493,11 +1520,19 @@ function renderTierPools() {
             ? '<span class="tier-claw-badge tier-claw-badge--btn" onclick="toggleOpenClawTag(\\\'' + escapeHtml(m.providerId) + '\\\',\\\'' + escapeHtml(m.modelId) + '\\\')" title="具备 OpenClaw 专属标签（点击可取消）"><i class="fas fa-paw"></i>OpenClaw</span>'
             : ''
 
-          // 关键需求：当前正在连接的模型标记（排在第一位的在席健康模型为主要连接输出模型）
-          const isConnectingActive = (idx === 0)
-          const activeBadgeHtml = isConnectingActive
-            ? '<span class="tier-active-badge" title="当前梯队首选调度输出模型（正在实时连接）"><span class="tier-active-dot"></span>连接中</span>'
-            : ''
+          // 关键需求：与最新调用日志动态锚定（支持根据真实请求结果准确标注连接节点）
+          const fullModelKey = m.providerId + '/' + m.modelId
+          const activeModelForTier = (typeof latestActiveModelMap !== 'undefined' && latestActiveModelMap && latestActiveModelMap[item.key]) ||
+            (window.latestActiveModelMap && window.latestActiveModelMap[item.key]) || null
+
+          let activeBadgeHtml = ''
+          if (activeModelForTier) {
+            if (fullModelKey === activeModelForTier) {
+              activeBadgeHtml = '<span class="tier-active-badge" title="系统最新成功请求真实调用的连接节点"><span class="tier-active-dot"></span>实时连接中</span>'
+            }
+          } else if (idx === 0) {
+            activeBadgeHtml = '<span class="tier-active-badge" title="无历史请求时，当前梯队首选默认调度输出节点"><span class="tier-active-dot"></span>默认首选</span>'
+          }
 
           // 从 latenciesMap 中拉取当前席位模型的探测与真实双延迟数据，完整保留两个标签
           const key = m.providerId + ':' + m.modelId
@@ -3167,6 +3202,34 @@ async function fetchLogs() {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--color-muted);">暂无日志记录（错误及超时会自动直接写入，正常调用随顺风车打包落盘）</td></tr>'
         return
       }
+
+      // 动态更新最新活跃模型映射，确保梯队池连接状态与控制台日志时刻保持对齐
+      var newActiveMap = {}
+      for (var li = 0; li < logs.length; li++) {
+        var lg = logs[li]
+        if (lg.statusCode >= 200 && lg.statusCode < 400 && lg.model) {
+          var strM = String(lg.model).trim()
+          var pOp = strM.lastIndexOf('(')
+          var pCl = strM.lastIndexOf(')')
+          if (pOp !== -1 && pCl > pOp) {
+            var mName = strM.substring(0, pOp).trim()
+            var innerStr = strM.substring(pOp + 1, pCl).trim()
+            var pParts = innerStr.split(':')
+            var tKey = pParts[0] ? pParts[0].trim() : ''
+            if (tKey && !newActiveMap[tKey]) {
+              newActiveMap[tKey] = mName
+            }
+          }
+        }
+      }
+      window.latestActiveModelMap = newActiveMap
+      if (typeof latestActiveModelMap !== 'undefined') {
+        latestActiveModelMap = newActiveMap
+      }
+      if (typeof renderTierPoolsJS === 'function') {
+        renderTierPoolsJS()
+      }
+
       function formatModelBadgeHTML(rawModel) {
         if (!rawModel || rawModel === '-') return '<span style="color: var(--color-muted);">-</span>'
         var str = String(rawModel).trim()
@@ -3202,6 +3265,14 @@ async function fetchLogs() {
           '</div>'
       }
 
+      function formatKeyHTML(rawKey) {
+        if (!rawKey) return '<span style="color: var(--color-muted);">-</span>'
+        var k = String(rawKey).trim()
+        if (k.length <= 12) return '<code style="font-weight: 600;">' + escapeHtml(k) + '</code>'
+        var masked = k.substring(0, 8) + '...' + k.substring(k.length - 4)
+        return '<code title="' + escapeHtml(k) + '" style="font-weight: 600; cursor: help;">' + escapeHtml(masked) + '</code>'
+      }
+
       tbody.innerHTML = logs.map(function(log) {
         const parsedTime = new Date(log.timestamp)
         const timeStr = isNaN(parsedTime.getTime()) ? escapeHtml(log.timestamp) : parsedTime.toLocaleString()
@@ -3209,7 +3280,7 @@ async function fetchLogs() {
         return '<tr>' +
           '<td>' + escapeHtml(timeStr) + '</td>' +
           '<td>' + formatModelBadgeHTML(log.model) + '</td>' +
-          '<td><code>' + escapeHtml(log.key ? (log.key.length > 12 ? log.key.substring(0,8) + '...' : log.key) : '-') + '</code></td>' +
+          '<td>' + formatKeyHTML(log.key) + '</td>' +
           '<td>' + (log.durationMs || 0) + ' ms</td>' +
           '<td><span class="status-chip ' + statusClass + '">' + log.statusCode + '</span></td>' +
           '<td>' + escapeHtml(log.failReason || '正常') + '</td>' +
