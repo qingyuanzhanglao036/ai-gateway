@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.55
+ * 版本号: v1.0.56
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -3167,13 +3167,40 @@ async function fetchLogs() {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--color-muted);">暂无日志记录（错误及超时会自动直接写入，正常调用随顺风车打包落盘）</td></tr>'
         return
       }
+      function formatModelBadgeHTML(rawModel) {
+        if (!rawModel || rawModel === '-') return '<span style="color: var(--color-muted);">-</span>'
+        var match = rawModel.match(/^(.*?)(?:\s*\((tier[123]|auto)(?::(sticky|auto))?\))?$/)
+        if (!match) return '<code>' + escapeHtml(rawModel) + '</code>'
+        var name = (match[1] || rawModel).trim()
+        var tier = match[2]
+        var mode = match[3]
+        var nameHtml = '<span style="font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--color-heading, #0f172a); font-size: 13px;">' + escapeHtml(name) + '</span>'
+        var badges = ''
+        if (tier === 'tier1') {
+          badges += '<span style="display: inline-flex; align-items: center; gap: 3px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;"><i class="fas fa-layer-group" style="font-size: 10px;"></i> 第一梯队</span>'
+        } else if (tier === 'tier2') {
+          badges += '<span style="display: inline-flex; align-items: center; gap: 3px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;"><i class="fas fa-paw" style="font-size: 10px;"></i> 第二梯队(Claw)</span>'
+        } else if (tier === 'tier3') {
+          badges += '<span style="display: inline-flex; align-items: center; gap: 3px; background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 500; white-space: nowrap;"><i class="fas fa-cubes" style="font-size: 10px;"></i> 第三梯队</span>'
+        }
+        if (mode === 'sticky') {
+          badges += '<span style="display: inline-flex; align-items: center; gap: 3px; background: #faf5ff; color: #7e22ce; border: 1px solid #e9d5ff; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;"><i class="fas fa-bolt" style="font-size: 10px; color: #9333ea;"></i> 会话复用</span>'
+        } else if (mode === 'auto') {
+          badges += '<span style="display: inline-flex; align-items: center; gap: 3px; background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 500; white-space: nowrap;"><i class="fas fa-crosshairs" style="font-size: 10px;"></i> 智能调度</span>'
+        }
+        return '<div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 2px 0;">' +
+          nameHtml +
+          (badges ? '<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">' + badges + '</div>' : '') +
+          '</div>'
+      }
+
       tbody.innerHTML = logs.map(function(log) {
         const parsedTime = new Date(log.timestamp)
         const timeStr = isNaN(parsedTime.getTime()) ? escapeHtml(log.timestamp) : parsedTime.toLocaleString()
         const statusClass = (log.statusCode >= 200 && log.statusCode < 400) ? 'status-chip--ok' : 'status-chip--err'
         return '<tr>' +
           '<td>' + escapeHtml(timeStr) + '</td>' +
-          '<td><code>' + escapeHtml(log.model || '-') + '</code></td>' +
+          '<td>' + formatModelBadgeHTML(log.model) + '</td>' +
           '<td><code>' + escapeHtml(log.key ? (log.key.length > 12 ? log.key.substring(0,8) + '...' : log.key) : '-') + '</code></td>' +
           '<td>' + (log.durationMs || 0) + ' ms</td>' +
           '<td><span class="status-chip ' + statusClass + '">' + log.statusCode + '</span></td>' +
