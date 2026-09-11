@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.49
+ * 版本号: v1.0.50
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -140,11 +140,23 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
 
           // 2. 从真实日志中匹配该梯队最近一次成功响应的提供商与模型 (100% 真实连接锚定)
           const tierPrefix = tier.alias.split('/')[0]
+          // 确定当前梯队对应的系统内部代号 (tier1, tier2, tier3)
+          let internalTierId = 'tier1'
+          if (tier.alias.includes('openclaw') || tier.alias.includes('tier2') || (tier.name && tier.name.includes('第二梯队'))) {
+            internalTierId = 'tier2'
+          } else if (tier.alias.includes('drawing') || tier.alias.includes('tier3') || (tier.name && tier.name.includes('第三梯队'))) {
+            internalTierId = 'tier3'
+          }
+
           let lastActiveModelKey: string | null = null
           if (recentLogs && recentLogs.length > 0) {
             for (const logItem of recentLogs) {
               if (logItem.statusCode >= 200 && logItem.statusCode < 400 && logItem.model) {
-                if (logItem.model.includes(`(${tierPrefix}`) || logItem.model.includes(`(${tier.alias}`)) {
+                // 兼容匹配内部代号 (如 tier1/tier2/tier3) 及用户别名 (如 flagship/openclaw/drawing)
+                const isMatchedTier = logItem.model.includes(`(${internalTierId}:`) ||
+                                      logItem.model.includes(`(${tierPrefix}`) ||
+                                      logItem.model.includes(`(${tier.alias}`)
+                if (isMatchedTier) {
                   const rawPart = logItem.model.split(' ')[0]
                   if (rawPart && rawPart.includes('/')) {
                     lastActiveModelKey = rawPart // 例如 "openai/gpt-4o"
@@ -1037,7 +1049,15 @@ ${H('管理')}
           ${providers.length ? providers.map(p=>`
           <article class="pi" data-id="${escapePageHtml(p.id)}">
             <div class="ps" onclick="tog('${p.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();tog('${p.id}')}" aria-controls="dt-${escapePageHtml(p.id)}">
-              <div class="l"><i class="fas fa-chevron-right provider-chevron" aria-hidden="true" id="ch-${escapePageHtml(p.id)}"></i><span class="provider-avatar" aria-hidden="true">${escapePageHtml(p.name.charAt(0).toUpperCase() || 'A')}</span><div><h3>${escapePageHtml(p.name)}</h3><div class="pu"><code>${escapePageHtml(p.id)}</code><span>${(p.apiType||'openai')==='anthropic'?'Anthropic':'OpenAI'}</span><span>${p.apiKeys.length} Keys</span><span>${p.models.length} 模型</span></div></div></div>
+              <div class="l"><i class="fas fa-chevron-right provider-chevron" aria-hidden="true" id="ch-${escapePageHtml(p.id)}"></i><span class="provider-avatar" aria-hidden="true">${escapePageHtml(p.name.charAt(0).toUpperCase() || 'A')}</span><div><h3>${escapePageHtml(p.name)}</h3><div class="pu"><code>${escapePageHtml(p.id)}</code><span>${(p.apiType||'openai')==='anthropic'?'Anthropic':'OpenAI'}</span><span>${p.apiKeys.length} Keys</span><span>${p.models.length} 模型</span>${(() => {
+                const nowMs = Date.now()
+                const deadCount = p.models ? p.models.filter(m => m.status === 'dead').length : 0
+                const coolingCount = p.models ? p.models.filter(m => m.status !== 'dead' && (m.status === 'cooling' || (m.cooldownUntil && m.cooldownUntil > nowMs))).length : 0
+                let html = ''
+                if (deadCount > 0) html += `<span style="color: #dc2626; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 6px;" title="有 ${deadCount} 个模型已熔断失效"><i class="fas fa-times-circle" style="margin-right: 3px;"></i>${deadCount} 熔断</span>`
+                if (coolingCount > 0) html += `<span style="color: #d97706; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 6px;" title="有 ${coolingCount} 个模型正在冷却中"><i class="fas fa-snowflake" style="margin-right: 3px;"></i>${coolingCount} 冷却</span>`
+                return html
+              })()}</div></div></div>
               <div class="fc fx-s0" onclick="event.stopPropagation()"><label class="tg"><input type="checkbox" ${p.enabled?'checked':''} id="en-${escapePageHtml(p.id)}" onchange="togglePb('${p.id}',this.checked)" aria-label="启用 ${escapePageHtml(p.name)}"><span class="sl"></span></label><span class="bd ${p.enabled?'bd-on':'bd-off'}">${p.enabled?'已启用':'未启用'}</span></div>
             </div>
             <div class="pd" id="dt-${escapePageHtml(p.id)}">
@@ -1994,6 +2014,26 @@ function renderProviderCard(p) {
   const plist = document.getElementById('plist')
   const empty = plist.querySelector('.empty-state')
   if (empty) empty.remove()
+
+  // 中文注释：计算客户端动态渲染时提供商下熔断（dead）与冷却（cooling）的模型数量
+  var deadCount = 0
+  var coolingCount = 0
+  if (p.models && Array.isArray(p.models)) {
+    var nowMs = Date.now()
+    p.models.forEach(function(m) {
+      if (m.status === 'dead') deadCount++
+      else if (m.status === 'cooling' || (m.cooldownUntil && m.cooldownUntil > nowMs)) coolingCount++
+    })
+  }
+
+  var warnBadgesHtml = ''
+  if (deadCount > 0) {
+    warnBadgesHtml += '<span style="color: #dc2626; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 6px;" title="有 ' + deadCount + ' 个模型已熔断失效"><i class="fas fa-times-circle" style="margin-right: 3px;"></i>' + deadCount + ' 熔断</span>'
+  }
+  if (coolingCount > 0) {
+    warnBadgesHtml += '<span style="color: #d97706; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 6px;" title="有 ' + coolingCount + ' 个模型正在冷却中"><i class="fas fa-snowflake" style="margin-right: 3px;"></i>' + coolingCount + ' 冷却</span>'
+  }
+
   const article = document.createElement('article')
   article.className = 'pi'
   article.dataset.id = p.id
@@ -2001,7 +2041,7 @@ function renderProviderCard(p) {
   article.innerHTML = '<div class="ps" onclick="tog(\\\'' + p.id + '\\\')" role="button" tabindex="0">' +
     '<div class="l"><i class="fas fa-chevron-right provider-chevron" id="ch-' + p.id + '"></i>' +
     '<span class="provider-avatar">' + escapeHtml(p.name.charAt(0).toUpperCase() || 'A') + '</span>' +
-    '<div><h3>' + escapeHtml(p.name) + '</h3><div class="pu"><code>' + escapeHtml(p.id) + '</code><span>' + (p.apiType==='anthropic'?'Anthropic':'OpenAI') + '</span><span>' + p.apiKeys.length + ' Keys</span><span>' + p.models.length + ' 模型</span></div></div></div>' +
+    '<div><h3>' + escapeHtml(p.name) + '</h3><div class="pu"><code>' + escapeHtml(p.id) + '</code><span>' + (p.apiType==='anthropic'?'Anthropic':'OpenAI') + '</span><span>' + p.apiKeys.length + ' Keys</span><span>' + p.models.length + ' 模型</span>' + warnBadgesHtml + '</div></div></div>' +
     '<div class="fc fx-s0" onclick="event.stopPropagation()"><label class="tg"><input type="checkbox" ' + (p.enabled?'checked':'') + ' id="en-' + p.id + '" onchange="togglePb(\\\'' + p.id + '\\\',this.checked)"><span class="sl"></span></label><span class="bd ' + (p.enabled?'bd-on':'bd-off') + '">' + (p.enabled?'已启用':'未启用') + '</span></div>' +
     '</div>' +
     '<div class="pd" id="dt-' + p.id + '">' +
