@@ -96,6 +96,7 @@ export interface ModelBusinessLatencyStats {
   samples: BusinessLatencySample[] // 最多 50 条（滑动窗口，旧样本丢弃）
   averageLatencyMs: number         // 最近有效样本的平均延迟
   lastUpdated: number
+  lastWrittenAt?: number           // 上次真正写入 KV 的时间戳（用于频率限制节约 KV 写入）
 }
 
 /**

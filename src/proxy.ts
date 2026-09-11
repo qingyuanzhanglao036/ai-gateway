@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.13
+ * 版本号: v1.0.53
  * 模块: API 代理请求转发、健康探测、梯队路由调度与会话专属调度粘性策略
  */
 import { Context } from 'hono'
@@ -25,7 +25,7 @@ import {
 } from './config'
 import type { Env, ProxyRequestBody, TierKey, Provider, TierConfig } from './types'
 import { isOpenCodeProvider, proxyOpenCodeRequest, resolveOpenCodeUrls } from './opencode'
-import { recordLog, recordErrorLogDirect, queueHealthUpdate, checkAndFlushOnRequest } from './log'
+import { recordLog, recordErrorLogDirect, queueHealthUpdate, checkAndFlushOnRequest, flushLogsToKv } from './log'
 
 // ===== Key 健康状态类型和辅助函数 =====
 
@@ -465,9 +465,11 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
         mirrorUrls: resolveOpenCodeUrls(c.env),
       })
       const durationMs = Date.now() - startTime
+      await finishAndLog(response.status, response.ok ? '-' : `OpenCode 状态码 ${response.status}`)
+
       if (response.ok) {
-        // 1. 记录真实业务成功延迟样本（滑动窗口，仅保留最近50条，用于梯队真实延迟对比）
-        // 2. 顺风车记录当前会话的成功模型（单会话保留最近5条，带TTL，保护免费写配额）
+        // 1. 记录真实业务成功延迟样本与会话复用关系
+        // 2. 顺风车将最新成功请求日志一次性打包写入 KV，确保网页即时同步最新连接状态
         c.executionCtx.waitUntil(
           Promise.all([
             recordBusinessLatency(c.env, providerId, modelId, {
@@ -477,6 +479,7 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
               success: true,
             }),
             recordSessionSuccessModel(c.env, sessionId, providerId, modelId),
+            flushLogsToKv(c.env),
           ])
         )
       } else {
@@ -485,7 +488,6 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
           handleBusinessModelFailure(c.env, providerId, modelId, response.status, `OpenCode 状态码 ${response.status}`)
         )
       }
-      await finishAndLog(response.status, response.ok ? '-' : `OpenCode 状态码 ${response.status}`)
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,
@@ -584,8 +586,11 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
           if (healthUpdated) await writeHealth(c.env, providerId, healthData)
 
           const durationMs = Date.now() - startTime
-          // 1. 记录真实业务成功延迟样本（滑动窗口，仅保留最近50条，用于梯队真实延迟对比）
-          // 2. 顺风车记录当前会话的成功模型（单会话保留最近5条，带TTL，保护免费写配额）
+          // 先将成功请求记录到内存日志队列
+          await finishAndLog(response.status, '-')
+
+          // 1. 记录真实业务成功延迟样本与会话复用关系
+          // 2. 顺风车将最新成功请求日志一次性打包写入 KV，确保网页即时同步最新连接状态
           c.executionCtx.waitUntil(
             Promise.all([
               recordBusinessLatency(c.env, providerId, modelId, {
@@ -595,6 +600,7 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
                 success: true,
               }),
               recordSessionSuccessModel(c.env, sessionId, providerId, modelId),
+              flushLogsToKv(c.env),
             ])
           )
 
@@ -602,8 +608,6 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
             'Content-Type': response.headers.get('Content-Type') || 'application/json',
             'Cache-Control': 'no-store',
           }
-          // 记录成功转发日志并落盘检查
-          await finishAndLog(response.status, '-')
           return new Response(response.body, {
             status: response.status,
             headers: responseHeaders,

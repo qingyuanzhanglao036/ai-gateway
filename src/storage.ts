@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.48
+ * 版本号: v1.0.53
  * 模块: 数据持久化层（KV 存储读写与顺风车打包）
  */
 import {
@@ -65,10 +65,11 @@ export async function recordSessionSuccessModel(
     }
   }
 
-  // 检查是否已经是最近一条，避免频繁写 KV
+  // 检查如果会话绑定的首选模型未改变，直接更新内存时间，不再触发 KV 写入，大幅节省免费写配额
   const top = record.history[0]
-  if (top && top.providerId === providerId && top.modelId === modelId && (now - top.lastSuccessAt < 60000)) {
-    // 1 分钟内相同会话同一模型连续调用，不重复触发 KV 写入，节省免费写配额
+  if (top && top.providerId === providerId && top.modelId === modelId) {
+    top.lastSuccessAt = now
+    stickinessMemoryCache[sessionId] = record
     return
   }
 
@@ -139,21 +140,33 @@ export async function recordProbeLog(env: Env, result: ProbeResult): Promise<voi
 // 3. 真实业务延迟样本（每个模型保留最近 50 条，超出丢弃旧样本，梯队动态淘汰仅采信此数据）
 const MAX_BUSINESS_LATENCY_SAMPLES = 50
 
+// 真实业务延迟统计内存缓存
+const businessLatencyMemoryCache: Record<string, ModelBusinessLatencyStats> = {}
+
 export async function getModelBusinessLatency(env: Env, providerId: string, modelId: string): Promise<ModelBusinessLatencyStats> {
-  const key = `${KV_KEYS.BUSINESS_LATENCY_PREFIX}${providerId}:${modelId}`
+  const cacheKey = `${providerId}:${modelId}`
+  if (businessLatencyMemoryCache[cacheKey]) {
+    return businessLatencyMemoryCache[cacheKey]
+  }
+
+  const key = `${KV_KEYS.BUSINESS_LATENCY_PREFIX}${cacheKey}`
   const data = await env.KV.get(key)
   if (data) {
     try {
-      return JSON.parse(data) as ModelBusinessLatencyStats
+      const stats = JSON.parse(data) as ModelBusinessLatencyStats
+      businessLatencyMemoryCache[cacheKey] = stats
+      return stats
     } catch { /* ignore */ }
   }
-  return {
+  const initStats: ModelBusinessLatencyStats = {
     providerId,
     modelId,
     samples: [],
     averageLatencyMs: 0,
     lastUpdated: Date.now(),
   }
+  businessLatencyMemoryCache[cacheKey] = initStats
+  return initStats
 }
 
 // 记录单次真实业务延迟（仅限真实业务 API 成功响应时调用）
@@ -163,7 +176,8 @@ export async function recordBusinessLatency(
   modelId: string,
   sample: BusinessLatencySample
 ): Promise<void> {
-  const key = `${KV_KEYS.BUSINESS_LATENCY_PREFIX}${providerId}:${modelId}`
+  const cacheKey = `${providerId}:${modelId}`
+  const key = `${KV_KEYS.BUSINESS_LATENCY_PREFIX}${cacheKey}`
   const stats = await getModelBusinessLatency(env, providerId, modelId)
 
   // 滑动窗口：追加新样本到头部，保留最多 50 条
@@ -180,12 +194,16 @@ export async function recordBusinessLatency(
   } else {
     stats.averageLatencyMs = sample.latencyMs
   }
-  stats.lastUpdated = Date.now()
+  const now = Date.now()
+  stats.lastUpdated = now
+  businessLatencyMemoryCache[cacheKey] = stats
 
+  // 门控限制：每个模型的真实延迟数据至少间隔 60 秒才重新写入一次 KV，极大节省写配额
+  if (stats.lastWrittenAt && (now - stats.lastWrittenAt < 60000)) {
+    return
+  }
+  stats.lastWrittenAt = now
   await env.KV.put(key, JSON.stringify(stats))
-
-  // 顺风车检查并打包内存中暂存的日志一同持久化至 KV
-  await flushLogsToKv(env)
 }
 
 // ===== 梯队池 CRUD =====

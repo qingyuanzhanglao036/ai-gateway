@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.51
+ * 版本号: v1.0.53
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -1286,6 +1286,14 @@ let stagedTiers = ${JSON.stringify(tierConfig).replace(/</g, '\\u003c')};
 let stagedCustomRoutes = ${JSON.stringify(customRoutes).replace(/</g, '\\u003c')};
 let latenciesMap = ${JSON.stringify(latenciesMap).replace(/</g, '\\u003c')}; // 同步前台海选与实机探测双指标延迟数据
 let unsavedChangesCount = 0;
+
+// 优先挂载关键交互函数至全局 window 域，确保 HTML onclick 响应 100% 可靠
+window.tog = function tog(id) {
+  const d = document.getElementById('dt-' + id), c = document.getElementById('ch-' + id);
+  if (d) d.classList.toggle('open');
+  if (c && d) c.style.transform = d.classList.contains('open') ? 'rotate(90deg)' : '';
+};
+var tog = window.tog;
 
 function markUnsaved() {
   unsavedChangesCount++;
@@ -3222,6 +3230,23 @@ renderCustomRoutes()
 fetchLogs()
 
 // 显式将常用的点击处理函数挂载到 window 上，保证 HTML onclick 全局可用
+window.tog = window.tog || tog;
+window.togglePb = togglePb;
+window.toggleKeyVis = toggleKeyVis;
+window.toggleProxyKey = toggleProxyKey;
+window.rmKey = rmKey;
+window.removeModelFromTier = removeModelFromTier;
+window.addModelToTier = addModelToTier;
+window.updateTierSeats = updateTierSeats;
+window.unblockModel = unblockModel;
+window.copyText = copyText;
+window.copyRowVal = copyRowVal;
+window.showM = showM;
+window.closeM = closeM;
+window.cM = cM;
+window.pM = pM;
+window.aM = aM;
+window.toast = toast;
 window.triggerBatchSave = triggerBatchSave;
 window.resetCoolingModels = resetCoolingModels;
 window.genKey = genKey;
