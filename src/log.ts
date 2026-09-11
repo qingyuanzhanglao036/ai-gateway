@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.56
+ * 版本号: v1.0.57
  * 模块: 内存日志管理、错误直接落盘、顺风车打包落盘与跨节点日志读取
  */
 import type { Env, LogEntry, DebugConfig } from './types'

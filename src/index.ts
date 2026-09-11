@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.56
+ * 版本号: v1.0.57
  * 模块: AI Gateway 主应用入口与路由配置
  */
 import { Hono } from 'hono'
