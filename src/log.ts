@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.4
+ * 版本号: v1.0.55
  * 模块: 内存日志管理、错误直接落盘、顺风车打包落盘与跨节点日志读取
  */
 import type { Env, LogEntry, DebugConfig } from './types'
@@ -10,6 +10,9 @@ const MAX_MEMORY_LOGS = 50
 
 // 内存日志列表（当前 Worker 实例局部队列）
 const memoryLogs: LogEntry[] = []
+
+// 未落盘内存日志条数计数器
+let unflushedLogsCount = 0
 
 // 调试与缓存配置（默认处于正式模式，支持后台动态自定义）
 let debugConfig: DebugConfig = {
@@ -44,19 +47,20 @@ export function recordLog(data: Omit<LogEntry, 'id'>): LogEntry {
     memoryLogs.shift()
   }
   memoryLogs.push(entry)
+  unflushedLogsCount++
   return entry
 }
 
 /**
- * 记录错误/超时等异常请求日志（直接写入 KV，确保故障排查不丢失）
+ * 记录错误/超时等异常请求日志（直接强制写入 KV，确保故障排查 100% 不丢失）
  */
 export async function recordErrorLogDirect(env: Env, data: Omit<LogEntry, 'id'>): Promise<LogEntry> {
   // 1. 先记录到内存队列
   const entry = recordLog(data)
 
-  // 2. 直接触发一次 KV 顺风车落盘合并写入
+  // 2. 强制触发一次 KV 顺风车落盘合并写入（把积存的内存日志与该错误日志打包写入）
   try {
-    await flushLogsToKv(env)
+    await flushLogsToKv(env, true)
   } catch (err) {
     console.error('[log] 错误日志直接写入 KV 失败:', err)
   }
@@ -66,10 +70,18 @@ export async function recordErrorLogDirect(env: Env, data: Omit<LogEntry, 'id'>)
 
 /**
  * 顺风车打包落盘：将内存中积攒的日志与 KV 中的日志合并写入（最多保留最近50条）
- * 严格控制 KV 写入次数，仅在系统有必要写操作或产生错误时调用
+ * 严格控制 KV 写入次数：
+ * 1. 若 force = true (如发生报错或有其它数据写 KV 顺风车)，只要有未落盘日志就立刻合并写入；
+ * 2. 正常成功请求仅当未落盘条数达到阈值 (maxCacheItems，默认 10~20) 时才触发 1 次写入，极大节省配额。
  */
-export async function flushLogsToKv(env: Env): Promise<void> {
+export async function flushLogsToKv(env: Env, force = false): Promise<void> {
   if (memoryLogs.length === 0) return
+
+  // 非强制状态下，若未落盘条数尚未达到自定义打包阈值，留在内存暂不消耗 KV 写配额
+  const threshold = debugConfig.maxCacheItems || 10
+  if (!force && unflushedLogsCount < threshold) {
+    return
+  }
 
   try {
     // 1. 读取 KV 中现存的历史日志
@@ -97,8 +109,9 @@ export async function flushLogsToKv(env: Env): Promise<void> {
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, MAX_MEMORY_LOGS)
 
-    // 4. 一次性写入 KV
+    // 4. 一次性打包写入 KV，重置未落盘计数器
     await env.KV.put(KV_KEYS.SYSTEM_RECENT_LOGS, JSON.stringify(merged))
+    unflushedLogsCount = 0
   } catch (err) {
     console.error('[log] 顺风车落盘日志至 KV 异常:', err)
   }
@@ -144,6 +157,7 @@ export async function getCombinedLogs(env: Env): Promise<LogEntry[]> {
  */
 export async function clearAllLogs(env: Env): Promise<void> {
   memoryLogs.length = 0
+  unflushedLogsCount = 0
   try {
     await env.KV.delete(KV_KEYS.SYSTEM_RECENT_LOGS)
   } catch (err) {

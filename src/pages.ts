@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.53
+ * 版本号: v1.0.55
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -856,6 +856,14 @@ export async function renderAdminPage(c: Context<{ Bindings: Env }>) {
   return c.html(`<!DOCTYPE html><html lang="zh-CN">
 ${H('管理')}
 <body class="site-page admin-page">
+<script>
+window.tog = function tog(id) {
+  var d = document.getElementById('dt-' + id), c = document.getElementById('ch-' + id);
+  if (d) d.classList.toggle('open');
+  if (c && d) c.style.transform = d.classList.contains('open') ? 'rotate(90deg)' : '';
+};
+var tog = window.tog;
+</script>
 <div class="admin-shell">
   <aside class="admin-rail" aria-label="控制台导航">
     <a class="brand admin-rail__brand" href="/">

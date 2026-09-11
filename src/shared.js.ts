@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.10
+ * 版本号: v1.0.55
  * 模块: 公共前端 JS 脚本与页脚组件
  */
 // 公共页脚渲染函数 — 主页与 /admin 页复用，保证两处页脚一致
@@ -15,6 +15,14 @@ export function renderSiteFooter(title: string): string {
 
 // 共享 JS 工具函数 — 注入到后台页面的 <script> 块中
 export const SHARED_JS = `
+// ── 优先定义全局 UI 展开/折叠交互函数，彻底杜绝 Uncaught ReferenceError: tog is not defined ──
+window.tog = function tog(id) {
+  var d = document.getElementById('dt-' + id), c = document.getElementById('ch-' + id);
+  if (d) d.classList.toggle('open');
+  if (c && d) c.style.transform = d.classList.contains('open') ? 'rotate(90deg)' : '';
+};
+var tog = window.tog;
+
 // ── Session 会话凭据保持（自动在受限 iframe 环境下为请求附加凭据） ──
 (function() {
   // 从当前 URL 参数或本地 sessionStorage 中获取 session_id
