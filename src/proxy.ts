@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.58
+ * 版本号: v1.0.59
  * 模块: API 代理请求转发、健康探测、梯队路由调度与会话专属调度粘性策略
  */
 import { Context } from 'hono'
@@ -26,6 +26,9 @@ import {
 import type { Env, ProxyRequestBody, TierKey, Provider, TierConfig } from './types'
 import { isOpenCodeProvider, proxyOpenCodeRequest, resolveOpenCodeUrls } from './opencode'
 import { recordLog, recordErrorLogDirect, queueHealthUpdate, checkAndFlushOnRequest, flushLogsToKv } from './log'
+
+// 内存中记录各梯队池上次调用的模型标识，用于检测是否发生模型切换并提醒用户
+const lastActiveModelByTier: Record<string, string> = {}
 
 // ===== Key 健康状态类型和辅助函数 =====
 
@@ -346,6 +349,7 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
   const rawKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : 'anonymous'
   const maskedKey = rawKey.length > 10 ? rawKey.slice(0, 6) + '...' + rawKey.slice(-4) : rawKey
   let selectedModel = 'unknown'
+  let isModelSwitched = false
 
   // 辅助函数：统一记录日志（报错与超时直接写入 KV，正常成功存入内存并触发后置落盘与顺风车）
   const finishAndLog = async (statusCode: number, failReason: string = '-') => {
@@ -366,6 +370,14 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
     } else {
       // 正常成功调用日志：记录到当前实例内存
       recordLog(logData)
+      // 如果该请求触发了模型切换，即刻强制合并落盘写 KV，确保控制台日志第一时间内展示该切换日志
+      if (isModelSwitched) {
+        try {
+          await flushLogsToKv(c.env, true)
+        } catch (err) {
+          console.error('[proxy] 模型切换日志即时落盘失败:', err)
+        }
+      }
     }
 
     // 每次请求后置校验落盘条件（解决 Cloudflare Worker 无常驻后台的问题）
@@ -414,9 +426,20 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
     }
 
     const { providerId, modelId, tierKey, matchedBySession } = scheduled
+
+    // 检测当前梯队池是否发生了模型切换
+    if (tierKey) {
+      const fullModelKey = `${providerId}/${modelId}`
+      const prevModelKey = lastActiveModelByTier[tierKey]
+      if (prevModelKey && prevModelKey !== fullModelKey) {
+        isModelSwitched = true
+      }
+      lastActiveModelByTier[tierKey] = fullModelKey
+    }
+
     selectedModel = `${providerId}/${modelId}`
     if (tierKey) {
-      selectedModel += ` (${tierKey}${matchedBySession ? ':sticky' : ':auto'})`
+      selectedModel += ` (${tierKey}${matchedBySession ? ':sticky' : ':auto'}${isModelSwitched ? ':switched' : ''})`
     }
 
     const provider = providers.find((p) => p.id === providerId)

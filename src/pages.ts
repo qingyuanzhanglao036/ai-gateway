@@ -3238,12 +3238,14 @@ async function fetchLogs() {
         var mode = ''
         var pOpen = str.lastIndexOf('(')
         var pClose = str.lastIndexOf(')')
+        var isSwitched = false
         if (pOpen !== -1 && pClose > pOpen) {
           name = str.substring(0, pOpen).trim()
           var inner = str.substring(pOpen + 1, pClose).trim()
           var parts = inner.split(':')
           tier = parts[0] ? parts[0].trim() : ''
           mode = parts[1] ? parts[1].trim() : ''
+          isSwitched = parts[2] === 'switched' || parts.indexOf('switched') !== -1
         }
         var nameHtml = '<div style="font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: #0f172a; font-size: 13.5px; margin-bottom: 2px; letter-spacing: -0.2px;">' + escapeHtml(name) + '</div>'
         var badges = ''
@@ -3258,6 +3260,9 @@ async function fetchLogs() {
           badges += '<span style="display: inline-flex; align-items: center; gap: 4px; background: #7c3aed; color: #ffffff; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; box-shadow: 0 1px 2px rgba(124,58,237,0.25); white-space: nowrap;"><i class="fas fa-bolt" style="font-size: 10px; color: #fde047;"></i> 会话复用</span>'
         } else if (mode === 'auto') {
           badges += '<span style="display: inline-flex; align-items: center; gap: 4px; background: #0284c7; color: #ffffff; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; box-shadow: 0 1px 2px rgba(2,132,199,0.25); white-space: nowrap;"><i class="fas fa-crosshairs" style="font-size: 10px;"></i> 智能调度</span>'
+        }
+        if (isSwitched) {
+          badges += '<span style="display: inline-flex; align-items: center; gap: 4px; background: #d97706; color: #ffffff; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; box-shadow: 0 1px 2px rgba(217,119,6,0.3); white-space: nowrap;"><i class="fas fa-sync-alt" style="font-size: 10px; color: #fef3c7;"></i> 模型已切换</span>'
         }
         return '<div style="display: flex; flex-direction: column; align-items: flex-start; padding: 3px 0;">' +
           nameHtml +
