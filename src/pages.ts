@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.58
+ * 版本号: v1.0.60
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -195,13 +195,9 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
             const isDead = rawM?.status === 'dead'
             const isCooling = !isDead && (rawM?.status === 'cooling' || (rawM?.cooldownUntil && rawM.cooldownUntil > nowMs))
 
-            const isRealtimeActive = lastActiveModelKey === fullId && !isDead && !isCooling
+            const isRealtimeActive = (lastActiveModelKey === fullId || (!lastActiveModelKey && idx === firstHealthyIdx)) && !isDead && !isCooling
 
-            if (isRealtimeActive) {
-              activeBadgeHtml = `<span class="tier-active-badge" title="系统最新成功请求真实调用的连接节点"><span class="tier-active-dot"></span>实时连接中</span>`
-            } else if (!lastActiveModelKey && idx === firstHealthyIdx) {
-              activeBadgeHtml = `<span class="tier-active-badge" title="无历史请求时，当前梯队首选默认调度输出节点"><span class="tier-active-dot"></span>默认首选</span>`
-            } else if (isCooling) {
+            if (isCooling) {
               const leftMins = rawM?.cooldownUntil ? Math.max(1, Math.ceil((rawM.cooldownUntil - nowMs) / 60000)) : 10
               activeBadgeHtml = `<span class="tier-cooling-badge" title="模型故障冷却中，暂时跳过（剩余约 ${leftMins} 分钟）" style="color: #d97706; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 500;"><i class="fas fa-clock" style="margin-right: 3px;"></i>冷却中 (${leftMins}m)</span>`
             } else if (isDead) {
@@ -214,9 +210,9 @@ export async function renderHomePage(c: Context<{ Bindings: Env }>, isLoggedIn: 
             const probeMs = latStats.probeLatency
             const realMs = latStats.realLatency
 
-            return `<div class="tier-model-item">
+            return `<div class="tier-model-item${isRealtimeActive ? ' tier-model-item--active' : ''}">
               <div class="tier-model-item__top">
-                <span class="tier-model-idx">#${idx + 1}</span>
+                <span class="tier-model-idx" title="${isRealtimeActive ? '当前正在实时连接中' : ''}">#${idx + 1}</span>
                 <span class="tier-model-prov" title="提供商: ${escapePageHtml(pName)}">${escapePageHtml(pName)}</span>
                 <span class="tier-model-name" title="${escapePageHtml(item.modelId)}">${escapePageHtml(item.modelId)}</span>
                 <button class="icon-btn copy-control" data-copy="${escapePageHtml(fullId)}" type="button" title="复制调用名" aria-label="复制模型名" style="padding: 2px 4px; font-size: 11px;">
@@ -1286,7 +1282,7 @@ var tog = window.tog;
               <tr>
                 <th>请求时间</th>
                 <th>选中模型</th>
-                <th>客户端 Key</th>
+                <th>提供商 Key</th>
                 <th>响应耗时</th>
                 <th>状态码</th>
                 <th>失败原因</th>
@@ -1525,14 +1521,15 @@ function renderTierPools() {
           const activeModelForTier = (typeof latestActiveModelMap !== 'undefined' && latestActiveModelMap && latestActiveModelMap[item.key]) ||
             (window.latestActiveModelMap && window.latestActiveModelMap[item.key]) || null
 
-          let activeBadgeHtml = ''
+          let isRealtimeActive = false
           if (activeModelForTier) {
             if (fullModelKey === activeModelForTier) {
-              activeBadgeHtml = '<span class="tier-active-badge" title="系统最新成功请求真实调用的连接节点"><span class="tier-active-dot"></span>实时连接中</span>'
+              isRealtimeActive = true
             }
           } else if (idx === 0) {
-            activeBadgeHtml = '<span class="tier-active-badge" title="无历史请求时，当前梯队首选默认调度输出节点"><span class="tier-active-dot"></span>默认首选</span>'
+            isRealtimeActive = true
           }
+          const activeClass = isRealtimeActive ? ' tier-model-item--active' : ''
 
           // 从 latenciesMap 中拉取当前席位模型的探测与真实双延迟数据，完整保留两个标签
           const key = m.providerId + ':' + m.modelId
@@ -1550,21 +1547,20 @@ function renderTierPools() {
           '</div>'
 
           // 统一标准规范的两行流式卡片：杜绝高矮不齐与错位换行，信息完整保留
-          return '<div class="tier-model-item">' +
+          return '<div class="tier-model-item' + activeClass + '">' +
             // 第一行：席位序号 + 提供商缩标 + 模型名称（单行超出省略） + 删除按钮
             '<div class="tier-model-item__top">' +
-              '<span class="tier-model-idx">#' + (idx + 1) + '</span>' +
+              '<span class="tier-model-idx" title="' + (isRealtimeActive ? '当前正在实时连接中' : '') + '">#' + (idx + 1) + '</span>' +
               '<span class="tier-model-prov" title="提供商: ' + escapeHtml(pName) + '">' + escapeHtml(pName) + '</span>' +
               '<span class="tier-model-name" title="' + escapeHtml(m.modelId) + '">' + escapeHtml(m.modelId) + '</span>' +
               '<button class="tier-model-del" data-tier="' + item.key + '" data-idx="' + idx + '" onclick="removeModelFromTier(this.dataset.tier, parseInt(this.dataset.idx, 10))" title="移出梯队" aria-label="移出梯队">' +
                 '<i class="fas fa-times"></i>' +
               '</button>' +
             '</div>' +
-            // 第二行：左侧分类 + 状态标签（连接中、OpenClaw） + 右侧完整的双测速指标
+            // 第二行：左侧分类 + 状态标签（OpenClaw） + 右侧完整的双测速指标
             '<div class="tier-model-item__bottom">' +
               '<div class="tier-model-item__tags">' +
                 catBadge +
-                activeBadgeHtml +
                 clawTagHtml +
               '</div>' +
               latHtml +

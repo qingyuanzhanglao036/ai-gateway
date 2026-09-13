@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.59
+ * 版本号: v1.0.60
  * 模块: API 代理请求转发、健康探测、梯队路由调度与会话专属调度粘性策略
  */
 import { Context } from 'hono'
@@ -350,14 +350,20 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
   const maskedKey = rawKey.length > 10 ? rawKey.slice(0, 6) + '...' + rawKey.slice(-4) : rawKey
   let selectedModel = 'unknown'
   let isModelSwitched = false
+  let usedProviderKey = ''
 
   // 辅助函数：统一记录日志（报错与超时直接写入 KV，正常成功存入内存并触发后置落盘与顺风车）
   const finishAndLog = async (statusCode: number, failReason: string = '-') => {
     const isErrorOrTimeout = statusCode >= 400 || (failReason && failReason !== '-')
+    // 优先记录实际打向 AI 提供商所使用的 API Key（安全脱敏展示前6后4），未匹配到提供商时兼容展示客户端 Key
+    const keyToLog = usedProviderKey
+      ? (usedProviderKey.length > 10 ? usedProviderKey.slice(0, 6) + '...' + usedProviderKey.slice(-4) : usedProviderKey)
+      : maskedKey
+
     const logData = {
       timestamp: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
       model: selectedModel,
-      key: maskedKey,
+      key: keyToLog,
       durationMs: Date.now() - startTime,
       statusCode,
       failReason,
@@ -478,6 +484,7 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
     const subPath = url.pathname.replace(/^\/v1\//, '') || 'chat/completions'
 
     if (isOpenCodeProvider(providerId)) {
+      usedProviderKey = enabledKeys[0]?.key || ''
       const response = await proxyOpenCodeRequest({
         baseUrl: provider.baseUrl,
         apiKeys: enabledKeys,
@@ -582,6 +589,7 @@ export async function handleProxy(c: Context<{ Bindings: Env }>) {
 
     for (const keyIndex of keyOrder) {
       const apiKey = enabledKeys[keyIndex].key
+      usedProviderKey = apiKey
       try {
         const forwardHeaders: Record<string, string> = {
           'Content-Type': 'application/json',

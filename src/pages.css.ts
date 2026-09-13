@@ -678,6 +678,9 @@ label, legend { color: var(--color-ink-2); font-size: var(--text-xs); font-weigh
 .tier-model-list { display: flex; flex-direction: column; gap: 6px; min-height: 60px; }
 .tier-model-item { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: var(--radius-control); transition: border-color .15s ease, background .15s ease; box-sizing: border-box; }
 .tier-model-item:hover { border-color: #cbd5e1; background: var(--color-paper); }
+.tier-model-item--active { border-color: #10b981 !important; background: rgba(16, 185, 129, 0.06) !important; box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.35) !important; }
+.tier-model-item--active .tier-model-idx { background: #10b981 !important; color: #ffffff !important; box-shadow: 0 0 5px rgba(16, 185, 129, 0.4); }
+.tier-model-item--active .tier-model-name { color: #065f46 !important; font-weight: 700 !important; }
 .tier-model-item__top { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; }
 .tier-model-idx { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--color-brand); background: var(--color-brand-soft); padding: 1px 4px; border-radius: 3px; flex-shrink: 0; line-height: 1.2; }
 .tier-model-prov { font-size: 10px; color: var(--color-muted); background: var(--color-paper-3); padding: 1px 4px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; max-width: 65px; overflow: hidden; text-overflow: ellipsis; border: 1px solid var(--color-rule); line-height: 1.3; }
