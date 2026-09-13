@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.48
+ * 版本号: v1.0.61
  * 模块: 自动择优探测调度框架与梯队智能补位迭代引擎
  * 
  * 核心设计准则：
@@ -12,10 +12,11 @@
  *    - 终止退出条件：梯队席位填满 / 所有可用模型遍历完成 / 到达最大 3 轮 / 无可用候选直接退出。
  *    - 故障熔断：探测遇到 401/403/404 或累计 3 次失败直接标红永久失效 (dead)；其它失败标黄冷却 10 分钟。
  * 3. OpenClaw 专属探测与防死循环：第二梯队补位时对未打标模型发起专属指令测试，成功自动打标入池；失败记入 30 分钟失败冷冻期，单次最多测试 3 个候选模型，防死循环暴击。
- * 4. KV 配额严格保护：探测过程中的状态变更与梯队变动在内存中计算，完成后搭顺风车一次性批量写入 KV。
+ * 4. 绘图专属池（第三梯队）宁缺勿滥：严格只允许生图模型进入，严禁普通文本模型混入；探测失败记入 30 分钟失败冷却表，杜绝死循环。
+ * 5. KV 配额严格保护：探测过程中的状态变更与梯队变动在内存中计算，完成后搭顺风车一次性批量写入 KV。
  */
 import type { Env, Provider, ProbeResult, Model, TierConfig, TierKey } from './types'
-import { isModelOpenClawSupported } from './types'
+import { isModelOpenClawSupported, isImageGenerationModel } from './types'
 import {
   getProviders,
   setProviders,
@@ -60,6 +61,9 @@ const tierRefillProviderOffset: Record<string, number> = {
 
 // OpenClaw 专属探测失败模型冷却记录表（内存防死循环，30 分钟内不重复对同一个失败模型发起 OpenClaw 专属指令测试）
 const openclawProbeFailTimeMap = new Map<string, number>()
+
+// 绘图专属探测失败模型冷却记录表（内存防死循环，30 分钟内不重复对同一个失败绘图模型发起专属测试，宁缺勿滥）
+const drawingProbeFailTimeMap = new Map<string, number>()
 
 /**
  * 辅助函数：收集所有已启用的提供商与已启用的模型列表（按顺序扁平排列）
@@ -107,7 +111,8 @@ export async function probeSingleModel(
   env: Env,
   provider: Provider,
   model: Model,
-  isExclusiveOpenClaw: boolean = false
+  isExclusiveOpenClaw: boolean = false,
+  isExclusiveDrawing: boolean = false
 ): Promise<{ success: boolean; statusCode: number; latencyMs: number; message: string }> {
   const startTime = Date.now()
   const enabledKeys = provider.apiKeys.filter((k) => k.enabled)
@@ -144,7 +149,7 @@ export async function probeSingleModel(
     const url = `${cleanBase}/${endpoint}`
     const headers = buildProbeHeaders(enabledKeys[0].key, provider.apiType)
 
-    // 若是 OpenClaw 专属探测，附带结构化指令测试
+    // 若是 OpenClaw 专属探测，附带结构化指令测试；若是绘图专属探测，测试生图可用性
     let payload: Record<string, unknown>
     if (isExclusiveOpenClaw) {
       payload = provider.apiType === 'anthropic'
@@ -164,6 +169,12 @@ export async function probeSingleModel(
             max_tokens: 10,
             temperature: 0.1,
           }
+    } else if (isExclusiveDrawing) {
+      payload = {
+        model: model.id,
+        messages: [{ role: 'user', content: 'draw test' }],
+        max_tokens: 1,
+      }
     } else {
       payload = {
         model: model.id,
@@ -172,12 +183,36 @@ export async function probeSingleModel(
       }
     }
 
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10000),
     })
+
+    // 针对绘图专属池探测：部分提供商只在 /v1/images/generations 开放生图模型，尝试回退探测
+    if (!response.ok && isExclusiveDrawing && (response.status === 404 || response.status === 400) && provider.apiType !== 'anthropic') {
+      try {
+        const imgUrl = `${cleanBase}/images/generations`
+        const imgPayload = {
+          model: model.id,
+          prompt: 'test',
+          n: 1,
+          size: '256x256',
+        }
+        const imgResp = await fetch(imgUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(imgPayload),
+          signal: AbortSignal.timeout(10000),
+        })
+        if (imgResp.ok) {
+          response = imgResp
+        }
+      } catch {
+        // 忽略回退探测异常，以原始 response 判定
+      }
+    }
 
     const durationMs = Date.now() - startTime
     const statusCode = response.status
@@ -193,6 +228,14 @@ export async function probeSingleModel(
           message: passed ? 'OpenClaw 指令测试通过' : '未遵循 OpenClaw 格式',
         }
       }
+      if (isExclusiveDrawing) {
+        return {
+          success: true,
+          statusCode,
+          latencyMs: durationMs,
+          message: '绘图专属模型连通测试通过',
+        }
+      }
       return {
         success: true,
         statusCode,
@@ -205,7 +248,7 @@ export async function probeSingleModel(
       success: false,
       statusCode,
       latencyMs: durationMs,
-      message: `HTTP 状态码 ${statusCode}`,
+      message: isExclusiveDrawing ? `绘图模型探测失败 (${statusCode})` : `HTTP 状态码 ${statusCode}`,
     }
   } catch (err) {
     const error = err as Error
@@ -496,9 +539,16 @@ export async function triggerTierRefill(
         }
       }
 
-      // 若是第三梯队（绘图专属），优先筛选绘图分类或全部可用候选
-      if (isTier3 && m.category && m.category !== 'image' && m.category !== 'other') {
-        // 允许候选进入
+      // 若是第三梯队（绘图专属池）：
+      // 1. 严格只允许生图模型进入（宁缺勿滥），严禁任何普通文本模型自动充数入池
+      // 2. 必须检查是否处于 30 分钟绘图专属探测失败冷却期中（彻底杜绝死循环轰炸）
+      if (isTier3) {
+        const isDrawing = isImageGenerationModel(m)
+        if (!isDrawing) {
+          continue // 普通文本模型一票否决，坚决不进入候选队列
+        }
+        const failCooldownUntil = drawingProbeFailTimeMap.get(`${p.id}:::${m.id}`) || 0
+        if (now < failCooldownUntil) continue // 处于 30 分钟失败冷却期内，跳过
       }
 
       pCandidates.push({ provider: p, model: m })
@@ -541,7 +591,9 @@ export async function triggerTierRefill(
   if (candidates.length === 0) {
     return {
       success: true,
-      message: '无可用候选模型（所有模型均在席位、冷却中或已失效），补位探测安全退出',
+      message: isTier3
+        ? '未找到可用的健康绘图模型，第三梯队执行宁缺勿滥原则，补位探测安全退出'
+        : '无可用候选模型（所有模型均在席位、冷却中或已失效），补位探测安全退出',
       refilledCount: 0,
     }
   }
@@ -552,10 +604,11 @@ export async function triggerTierRefill(
   let stateModified = false
   let untaggedProbedCountForTier2 = 0
   const MAX_UNTAGGED_PROBES_PER_REFILL = 3
+  const maxRefillRounds = isTier3 ? 2 : MAX_REFILL_PROBE_ROUNDS
 
-  // 5. 补位主循环：最多连续 3 轮完整海选
+  // 5. 补位主循环：最多连续 2-3 轮完整海选
   while (
-    round < MAX_REFILL_PROBE_ROUNDS &&
+    round < maxRefillRounds &&
     targetTier.models.length < targetTier.maxSeats &&
     candidateIndex < candidates.length
   ) {
@@ -574,7 +627,7 @@ export async function triggerTierRefill(
     // 并行探测本批次候选模型（因为来自不同提供商，并行探测不超频、不触发单平台限流，速度大幅提升）
     const probeResults = await Promise.all(
       currentBatch.map(async (cand) => {
-        const probeRes = await probeSingleModel(env, cand.provider, cand.model, isTier2)
+        const probeRes = await probeSingleModel(env, cand.provider, cand.model, isTier2, isTier3)
         return { cand, probeRes }
       })
     )
@@ -613,6 +666,12 @@ export async function triggerTierRefill(
         if (isTier2 && !isAlreadyOpenClaw) {
           openclawProbeFailTimeMap.set(modelKey, now + 30 * 60 * 1000)
           untaggedProbedCountForTier2++
+        } else if (isTier3) {
+          // 若是第三梯队绘图专属模型测试失败：记入 30 分钟专属冷却表，防死循环轰炸
+          drawingProbeFailTimeMap.set(modelKey, now + 30 * 60 * 1000)
+          cand.model.failCount = (cand.model.failCount || 0) + 1
+          cand.model.status = 'cooling'
+          cand.model.cooldownUntil = now + MODEL_COOLDOWN_DURATION_MS
         } else {
           cand.model.failCount = (cand.model.failCount || 0) + 1
           const isAuthOrNotFound =
@@ -646,10 +705,15 @@ export async function triggerTierRefill(
         continue
       }
 
+      // 严格门禁：第三梯队模型必须是真正的绘图模型（宁缺勿滥，严禁普通文本模型充数入池）
+      if (isTier3 && !isImageGenerationModel(item.candidate.model)) {
+        continue
+      }
+
       targetTier.models.push({
         providerId: item.candidate.provider.id,
         modelId: item.candidate.model.id,
-        category: item.candidate.model.category || 'text',
+        category: item.candidate.model.category || 'image',
         addedAt: Date.now(),
       })
       totalRefilled++

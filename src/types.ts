@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.14
+ * 版本号: v1.0.61
  * 模块: AI Gateway 核心类型定义与模型智能分类辅助函数
  */
 
@@ -102,7 +102,7 @@ export interface ModelBusinessLatencyStats {
 /**
  * 根据模型名称关键词自动识别模型分类
  * 规则：
- * 1. 绘图关键词: draw、image、flux、sd、绘画
+ * 1. 绘图关键词: dall-e、flux、stable-diffusion、sd、sdxl、midjourney、draw、image、cogview、kolors、生图、绘画等
  * 2. 多模态关键词: vision、vl
  * 3. 其余默认文本，匹配不到归为其他
  */
@@ -110,7 +110,7 @@ export function detectModelCategory(modelId: string): ModelCategory {
   if (!modelId || typeof modelId !== 'string') return 'other'
   const lower = modelId.toLowerCase()
   // 优先匹配绘图关键词
-  if (/draw|image|flux|sd|绘画/.test(lower)) {
+  if (/(?:dall-?e|flux|stable-?diffusion|\bsd\b|sdxl|midjourney|draw|image|cogview|kolors|生图|绘画|imagen|recraft|ideogram)/i.test(lower)) {
     return 'image'
   }
   // 匹配多模态关键词
@@ -119,6 +119,16 @@ export function detectModelCategory(modelId: string): ModelCategory {
   }
   // 默认归为文本模型
   return 'text'
+}
+
+/**
+ * 判断是否属于真正的文生图/图像生成模型（严格宁缺勿滥，用于第三梯队绘图专属池准入）
+ */
+export function isImageGenerationModel(model: { id: string; category?: ModelCategory; tags?: string[] }): boolean {
+  if (!model || !model.id) return false
+  if (model.category === 'image') return true
+  if (Array.isArray(model.tags) && (model.tags.includes('image') || model.tags.includes('drawing') || model.tags.includes('绘图'))) return true
+  return detectModelCategory(model.id) === 'image'
 }
 
 export interface ApiKeyEntry {

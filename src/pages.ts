@@ -1,5 +1,5 @@
 /**
- * 版本号: v1.0.60
+ * 版本号: v1.0.61
  * 模块: Web 页面渲染（首页、登录页、管理控制台及三大梯队池管理前端）
  */
 import { Context } from 'hono'
@@ -889,7 +889,7 @@ var tog = window.tog;
   <aside class="admin-rail" aria-label="控制台导航">
     <a class="brand admin-rail__brand" href="/">
       <span class="brand__mark" aria-hidden="true"><i class="fas fa-cloud"></i></span>
-      <span><strong>${SITE_CONFIG.title}</strong><small>CONTROL PLANE</small></span>
+      <span><strong style="display: inline-flex; align-items: center; gap: 6px;">${SITE_CONFIG.title}<span class="bd bd-info" style="font-size: 11px; padding: 1px 5px; border-radius: 4px; font-weight: 600; line-height: 1.2;">${SITE_CONFIG.version}</span></strong><small>CONTROL PLANE</small></span>
     </a>
     <nav class="admin-nav">
       <a class="admin-nav__link is-active" href="#overview"><i class="fas fa-chart-pie" aria-hidden="true"></i><span>概览</span></a>
@@ -913,7 +913,7 @@ var tog = window.tog;
 
   <div class="admin-main">
     <header class="admin-topbar">
-      <a class="brand" href="/"><span class="brand__mark" aria-hidden="true"><i class="fas fa-cloud"></i></span><span class="brand__name">${SITE_CONFIG.title}</span></a>
+      <a class="brand" href="/"><span class="brand__mark" aria-hidden="true"><i class="fas fa-cloud"></i></span><span class="brand__name" style="display: inline-flex; align-items: center; gap: 6px;">${SITE_CONFIG.title}<span class="bd bd-info" style="font-size: 11px; padding: 1px 5px; border-radius: 4px; font-weight: 600;">${SITE_CONFIG.version}</span></span></a>
       <nav aria-label="移动端控制台导航">
         <a href="#overview">概览</a>
         <a href="#providers">提供商</a>
@@ -1456,16 +1456,20 @@ function renderTierPools() {
     const models = t.models || []
     const isFull = models.length >= t.maxSeats
     const isTier2 = item.key === 'tier2'
+    const isTier3 = item.key === 'tier3'
 
-    // 关键逻辑：第二梯队（OpenClaw）前置筛选，仅提供带有 openclaw 专属标签且未被手动取消的模型
+    // 关键逻辑：第二梯队（OpenClaw）和第三梯队（绘图专属池）前置严格筛选
     const filteredCandidates = allAvailableModels.filter(function(m) {
       if (isTier2) return m.isOpenClaw && !m.isManualCanceled
+      if (isTier3) {
+        return m.category === 'image' || /(?:dall-?e|flux|stable-?diffusion|\bsd\b|sdxl|midjourney|draw|image|cogview|kolors|生图|绘画|imagen|recraft|ideogram)/i.test(m.modelId)
+      }
       return true
     })
 
     // 下拉选项
     const optionsHtml = filteredCandidates.length === 0
-      ? (isTier2 ? '<option value="">暂无具备 openclaw 专属标签的模型</option>' : '<option value="">暂无可用模型，请先添加提供商与模型</option>')
+      ? (isTier2 ? '<option value="">暂无具备 openclaw 专属标签的模型</option>' : (isTier3 ? '<option value="">暂无生图模型，请在提供商中添加绘图模型</option>' : '<option value="">暂无可用模型，请先添加提供商与模型</option>'))
       : '<option value="">-- 选择要指派入席的模型 --</option>' + filteredCandidates.map(function(m) {
           const inThisTier = models.some(function(tm) { return tm.providerId === m.providerId && tm.modelId === m.modelId })
           const catName = m.category === 'image' ? '绘图' : (m.category === 'multimodal' ? '多模态' : '文本')
@@ -1651,6 +1655,15 @@ function addModelToTier(tierKey) {
     }
     if (!isClaw) {
       toast('入席拦截：第二梯队为 OpenClaw 专属池，该模型未拥有 openclaw 专属标签，禁止加入！', 'error')
+      return
+    }
+  }
+
+  // 关键准入限制：第三梯队（Tier3 绘图专属池）严格只允许真正的生图模型，严禁普通文本模型混入（宁缺勿滥）
+  if (tierKey === 'tier3') {
+    const isDrawing = cat === 'image' || /(?:dall-?e|flux|stable-?diffusion|\bsd\b|sdxl|midjourney|draw|image|cogview|kolors|生图|绘画|imagen|recraft|ideogram)/i.test(modelId)
+    if (!isDrawing) {
+      toast('入席拦截：第三梯队为绘图专属池，仅允许真正的文生图模型入席，严禁普通文本模型充数混入！', 'error')
       return
     }
   }
